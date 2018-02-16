@@ -1,0 +1,141 @@
+<?xml version="1.0" ?>
+<Edo>
+   <Joint id="1">
+        <Parameters>
+             <Kpp description="proportional position gain" value="1.3"/>
+             <Tpi description="integrative time of the position loop" value="30000"/>
+             <Tpd description="derivative time of the position loop" value="0"/>
+             <Satp description="Saturation of the position loop" value="10000000.0"/>
+             <Maxp description="Maximum value at the end of the position loop" value="46816"/>
+             <Kffp description="Feed forward gain of the position loop" value="0"/>
+             <Kvp description="proportional velocity gain" value="0.15"/>
+             <Tvi description="integrative time of the velocity loop" value="2500"/>
+             <Tvd description="derivative time of the velocity loop" value="0"/>
+             <Satv description="Saturation of the velocity loop" value="100000.0"/>
+             <Maxv description="Maximum value at the end of the velocity loop" value="93631"/>
+             <Kffv description="Feed forward gain of the velocity loop" value="0"/>
+             <Kcp description="proportional current gain" value="0.0015"/>
+             <Tci description="integrative time of the current loop" value="30"/>
+             <Tcd description="derivative time of the current loop" value="0"/>
+             <Satc description="Saturation of the current loop" value="100000.0"/>
+             <Maxc description="Maximum value at the end of the current loop" value="12"/>
+             <Kffc description="Feed forward gain of the current loop" value="0"/>
+             <Kt description="Torque constant" value="0.00973"/>
+        </Parameters>
+    </Joint>
+    <Joint id="2">
+        <Parameters>
+             <Kpp description="proportional position gain" value="1.3"/>
+             <Tpi description="integrative time of the position loop" value="60000"/>
+             <Tpd description="derivative time of the position loop" value="0"/>
+             <Satp description="Saturation of the position loop" value="10000000.0"/>
+             <Maxp description="Maximum value at the end of the position loop" value="46816"/>
+             <Kffp description="Feed forward gain of the position loop" value="0"/>
+             <Kvp description="proportional velocity gain" value="0.15"/>
+             <Tvi description="integrative time of the velocity loop" value="1500"/>
+             <Tvd description="derivative time of the velocity loop" value="0"/>
+             <Satv description="Saturation of the velocity loop" value="100000.0"/>
+             <Maxv description="Maximum value at the end of the velocity loop" value="93631"/>
+             <Kffv description="Feed forward gain of the velocity loop" value="0"/>
+             <Kcp description="proportional current gain" value="0.0015"/>
+             <Tci description="integrative time of the current loop" value="30"/>
+             <Tcd description="derivative time of the current loop" value="0"/>
+             <Satc description="Saturation of the current loop" value="100000.0"/>
+             <Maxc description="Maximum value at the end of the current loop" value="12"/>
+             <Kffc description="Feed forward gain of the current loop" value="0"/>
+             <Kt description="Torque constant" value="0.00973"/>
+        </Parameters>
+    </Joint>
+    <Joint id="3">
+        <Parameters>
+             <Kpp description="proportional position gain" value="1.3"/>
+             <Tpi description="integrative time of the position loop" value="50000"/>
+             <Tpd description="derivative time of the position loop" value="0"/>
+             <Satp description="Saturation of the position loop" value="10000000.0"/>
+             <Maxp description="Maximum value at the end of the position loop" value="46816"/>
+             <Kffp description="Feed forward gain of the position loop" value="0"/>
+             <Kvp description="proportional velocity gain" value="0.15"/>
+             <Tvi description="integrative time of the velocity loop" value="1500"/>
+             <Tvd description="derivative time of the velocity loop" value="0"/>
+             <Satv description="Saturation of the velocity loop" value="100000.0"/>
+             <Maxv description="Maximum value at the end of the velocity loop" value="93631"/>
+             <Kffv description="Feed forward gain of the velocity loop" value="0"/>
+             <Kcp description="proportional current gain" value="0.0015"/>
+             <Tci description="integrative time of the current loop" value="30"/>
+             <Tcd description="derivative time of the current loop" value="0"/>
+             <Satc description="Saturation of the current loop" value="100000.0"/>
+             <Maxc description="Maximum value at the end of the current loop" value="12"/>
+             <Kffc description="Feed forward gain of the current loop" value="0"/>
+             <Kt description="Torque constant" value="0.00973"/>
+        </Parameters>
+    </Joint>
+    <Joint id="4">
+        <Parameters>
+             <Kpp description="proportional position gain" value="2"/>
+             <Tpi description="integrative time of the position loop" value="50000"/>
+             <Tpd description="derivative time of the position loop" value="0"/>
+             <Satp description="Saturation of the position loop" value="10000000.0"/>
+             <Maxp description="Maximum value at the end of the position loop" value="57600"/>
+             <Kffp description="Feed forward gain of the position loop" value="0"/>
+             <Kvp description="proportional velocity gain" value="0.2"/>
+             <Tvi description="integrative time of the velocity loop" value="2000"/>
+             <Tvd description="derivative time of the velocity loop" value="0"/>
+             <Satv description="Saturation of the velocity loop" value="1000000.0"/>
+             <Maxv description="Maximum value at the end of the velocity loop" value="115000"/>
+             <Kffv description="Feed forward gain of the velocity loop" value="0"/>
+             <Kcp description="proportional current gain" value="0.004"/>
+             <Tci description="integrative time of the current loop" value="50"/>
+             <Tcd description="derivative time of the current loop" value="0"/>
+             <Satc description="Saturation of the current loop" value="100000.0"/>
+             <Maxc description="Maximum value at the end of the current loop" value="12"/>
+             <Kffc description="Feed forward gain of the current loop" value="0"/>
+             <Kt description="Torque constant" value="0.00853"/>
+        </Parameters>
+    </Joint>
+    <Joint id="5">
+        <Parameters>
+             <Kpp description="proportional position gain" value="2"/>
+             <Tpi description="integrative time of the position loop" value="50000"/>
+             <Tpd description="derivative time of the position loop" value="0"/>
+             <Satp description="Saturation of the position loop" value="10000000.0"/>
+             <Maxp description="Maximum value at the end of the position loop" value="57600"/>
+             <Kffp description="Feed forward gain of the position loop" value="0"/>
+             <Kvp description="proportional velocity gain" value="0.2"/>
+             <Tvi description="integrative time of the velocity loop" value="2000"/>
+             <Tvd description="derivative time of the velocity loop" value="0"/>
+             <Satv description="Saturation of the velocity loop" value="1000000.0"/>
+             <Maxv description="Maximum value at the end of the velocity loop" value="115000"/>
+             <Kffv description="Feed forward gain of the velocity loop" value="0"/>
+             <Kcp description="proportional current gain" value="0.004"/>
+             <Tci description="integrative time of the current loop" value="50"/>
+             <Tcd description="derivative time of the current loop" value="0"/>
+             <Satc description="Saturation of the current loop" value="100000.0"/>
+             <Maxc description="Maximum value at the end of the current loop" value="12"/>
+             <Kffc description="Feed forward gain of the current loop" value="0"/>
+             <Kt description="Torque constant" value="0.00853"/>
+        </Parameters>
+    </Joint>
+    <Joint id="6">
+        <Parameters>
+             <Kpp description="proportional position gain" value="2"/>
+             <Tpi description="integrative time of the position loop" value="50000"/>
+             <Tpd description="derivative time of the position loop" value="0"/>
+             <Satp description="Saturation of the position loop" value="10000000.0"/>
+             <Maxp description="Maximum value at the end of the position loop" value="57600"/>
+             <Kffp description="Feed forward gain of the position loop" value="0"/>
+             <Kvp description="proportional velocity gain" value="0.2"/>
+             <Tvi description="integrative time of the velocity loop" value="2000"/>
+             <Tvd description="derivative time of the velocity loop" value="0"/>
+             <Satv description="Saturation of the velocity loop" value="1000000.0"/>
+             <Maxv description="Maximum value at the end of the velocity loop" value="115000"/>
+             <Kffv description="Feed forward gain of the velocity loop" value="0"/>
+             <Kcp description="proportional current gain" value="0.004"/>
+             <Tci description="integrative time of the current loop" value="50"/>
+             <Tcd description="derivative time of the current loop" value="0"/>
+             <Satc description="Saturation of the current loop" value="100000.0"/>
+             <Maxc description="Maximum value at the end of the current loop" value="12"/>
+             <Kffc description="Feed forward gain of the current loop" value="0"/>
+             <Kt description="Torque constant" value="0.00853"/>
+        </Parameters>
+    </Joint>
+</Edo>
