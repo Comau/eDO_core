@@ -2,7 +2,7 @@
 <package>
   <name>edo_core</name>
   <version>0.1.0</version>
-  <description>The edo_core_pkg package</description>
+  <description>The edo_core package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
