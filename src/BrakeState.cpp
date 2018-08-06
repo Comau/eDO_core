@@ -71,11 +71,17 @@ State* BrakeState::HandleReset(const edo_core_msgs::JointReset mask) {
         command->ExecuteCommand(this, mask);                                    
                                                                                 
         int fd = open("/edo/k3fifo", O_WRONLY);                                 
-        write(fd, "u\n", 2);                                                    
-        close(fd);                                                              
-        ROS_INFO("brake state send reset");                                                                        
-        return command;                                                         
-                                                                                
+        if (fd != 0)
+        {
+          write(fd, "u\n", 2);                                                    
+          close(fd);                                                              
+          ROS_INFO("brake state send reset");                                                                        
+        }
+        else
+        {
+          ROS_ERROR("brake state failure opening k3fifo");                                                                        
+        }
+        return command;                                                                                                                                       
 }
 
 State* BrakeState::ackCommand() {

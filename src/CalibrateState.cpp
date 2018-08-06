@@ -91,9 +91,9 @@ State* CalibrateState::HandleInit(const edo_core_msgs::JointInit mask) {
 
 }
 
-State* CalibrateState::HandleJog(const edo_core_msgs::MovementCommand& msg) {
+State* CalibrateState::HandleJog(const edo_core_msgs::MovementCommand& move_msg) {
 
-	if (msg.movement_type == JOG_STOP) {
+	if (move_msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP) {
 		// Se sono in questo stato vuol dire che non ho ancora ricevuto il comando di start
 		// altrimenti sarei nello stato JogState
 		ROS_INFO("Jog movement is not active.");
@@ -103,7 +103,7 @@ State* CalibrateState::HandleJog(const edo_core_msgs::MovementCommand& msg) {
 	JogState* jog = JogState::getInstance();
 
 	// Eseguo il comando...
-	return jog->ExecuteJog(this, msg);
+	return jog->ExecuteJog(this, move_msg);
 }
 
 State* CalibrateState::HandleMove(const edo_core_msgs::MovementCommand& msg) {

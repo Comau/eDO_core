@@ -36,6 +36,7 @@
 #ifndef EDO_CORE_PKG_INCLUDE_ALGORITHMMANAGER_HPP_
 #define EDO_CORE_PKG_INCLUDE_ALGORITHMMANAGER_HPP_
 
+#include <pthread.h>
 #include <vector>
 #include <cstdint>
 #include <math.h>
@@ -44,6 +45,7 @@
 #include <climits>
 #include <list>
 #include <algorithm>
+#include <cstdlib>
 
 #include "edo_core_msgs/JointStateArray.h"
 #include "edo_core_msgs/JointControlArray.h"
@@ -56,6 +58,7 @@
 #include "edo_core_msgs/InverseKinematics.h"
 #include "edo_core_msgs/JointCalibration.h"
 #include "edo_core_msgs/ControlSwitch.h"
+#include "edo_core_msgs/LoadConfigurationFile.h"
 #include <std_msgs/Int8.h>
 #include "ros/ros.h"
 #include <ros/package.h>
@@ -74,6 +77,16 @@ class AlgorithmManager
 {
 public:
 
+#define INTERPOLATION_STEP      2  // GET_NEXT_STEP CALLS PERIOD
+#define INTERPOLATION_TIME_STEP (INTERPOLATION_STEP / 1000.0f)  // Ts in ms
+#define CONTROLLER_FREQUENCY    100 // in Hz
+#define CONTROLLER_PERIOD         (1000.0f / CONTROLLER_FREQUENCY) // A target is produced every 10ms
+#define NR_GET_NEXT_STEP_CALLS    (CONTROLLER_PERIOD / INTERPOLATION_STEP)
+// INTERPOLATION_STEP --> 1  DUE_PER_TS --> 0.002  TS_SQUARE --> 0.000001
+// INTERPOLATION_STEP --> 2  DUE_PER_TS --> 0.004  TS_SQUARE --> 0.000004
+#define DUE_PER_TS                (2.0f * INTERPOLATION_TIME_STEP)  
+#define TS_SQUARE                 (INTERPOLATION_TIME_STEP * INTERPOLATION_TIME_STEP)  
+
 	enum Mode {
 		UNINITIALIZED = 0,
 		INITIALIZED = 1,
@@ -83,7 +96,8 @@ public:
 		FINISHED = 5,
 		PAUSE = 6,
 		RECOVERY = 7,
-		SWITCHED_OFF = 8
+		SWITCHED_OFF = 8,
+		MAX_NUM_ALGORITHM_MODES = 9
 	};
 
 	AlgorithmManager(ros::NodeHandle&);
@@ -98,30 +112,45 @@ public:
 private:
 	ros::Timer timerCalib_;
 	Mode algorithm_mode_;
-	ros::Publisher feedback_publisher_, cartesian_pose_pub_, algorithm_state_pub_;
 	ORL_joint_value current_state_;
-	edo_core_msgs::JointControlArray joints_control_;
-	edo_core_msgs::MovementFeedback next_move_request_;
 	ORL_joint_value target_joint_;
-	ORL_cartesian_position target_cart_;
+	ORL_joint_value target_joint_via_;
 	ORL_joint_value hold_position_;
+	boost::circular_buffer<ORL_joint_value> interpolation_data_;
+	ORL_cartesian_position target_cart_;
+	ORL_cartesian_position target_cart_via_;
+	ORL_cartesian_position base_;
+	ORL_cartesian_position tool_;
+	ORL_cartesian_position uframe_;
 	double controller_frequency_, state_saturation_threshold_;
+	int joints_number_;
 	int interpolation_time_step_;
+	int  jog_target_data_type_;
+	int aggPosCartPose_;
+	int configurationFileLoaded_;
+	int numberSteps_;
+	int numberSteps_M42_;
+	int strk_[2][ORL_MAX_AXIS];
 	uint delay_;
 	bool waiting_, jog_carlin_state_, jog_state_;
-	ros::Time start_wait_time_;
-	boost::circular_buffer<ORL_joint_value> interpolation_data_;
-	float R_old_[3][3], R_step_[3][3];
-	ORL_cartesian_position p_;
+	bool  noCartPose_;
 	bool first_time_;
-	int strk_[2][ORL_MAX_AXIS];
-	std::string pkg_path_;
-	bool move_cb_state_;
 	bool pause_state_;
-	int joints_number_;
-	uint64_t jointCalib_;
+	bool pending_cancel_;
+	ros::Time start_wait_time_;
+	pthread_mutex_t control_mutex_;
+	ORL_cartesian_position p_;
+	unsigned long joints_mask_;
+	unsigned long joints_aux_mask_;
+	uint32_t jointCalib_;
+	std::string pkg_path_;
+	float R_old_[3][3], R_step_[3][3];
+	edo_core_msgs::JointControlArray joints_control_;
+	edo_core_msgs::MovementFeedback next_move_request_;
+	edo_core_msgs::MovementCommand in_progress_moveCommand_;
 	std::list<edo_core_msgs::MovementCommand> msglist_;
 	std::list<edo_core_msgs::MovementCommand> msglistJog_;
+	ros::Publisher feedback_publisher_, cartesian_pose_pub_, algorithm_state_pub_;
 
 	bool moveTrjntFn (edo_core_msgs::MovementCommand * msg);
 	bool moveCarlinFn(edo_core_msgs::MovementCommand * msg);
@@ -134,12 +163,13 @@ private:
 	bool jogStopFn   (edo_core_msgs::MovementCommand * msg);
 	void calibCallback(edo_core_msgs::JointCalibrationConstPtr msg);
 	void timerCallback(const ros::TimerEvent& event);
-	
+	Mode getAlgorithmMode(void) { return(algorithm_mode_); };
+	void setAlgorithmMode(Mode si_mode, const char *apc_func, int si_line);
 	void initialize (edo_core_msgs::JointStateArrayConstPtr);
-	int setORLMovement(std::vector<int> move_parameters, int movement_type, int ovr);
+	int setORLMovement(std::vector<int> move_parameters, int movement_type, int point_data_type, int ovr);
 	void setControl();
 	void keepPosition();
-	bool manageORLStatus(int const&);
+	bool manageORLStatus(int const&, const char* service_name);
 	int get_Strk(int strk[2][ORL_MAX_AXIS]);
 	void vZYZm(ORL_cartesian_position p, float R[3][3]);
 	void mvZYZ(float R[3][3], ORL_cartesian_position *p);
@@ -149,9 +179,10 @@ private:
 	bool getJointsNumber(edo_core_msgs::JointsNumber::Request  &req, edo_core_msgs::JointsNumber::Response &res);
 	bool getDirectKinematics(edo_core_msgs::DirectKinematics::Request  &req, edo_core_msgs::DirectKinematics::Response &res);
 	bool getInverseKinematics(edo_core_msgs::InverseKinematics::Request  &req, edo_core_msgs::InverseKinematics::Response &res);
+	bool loadConfigurationFile_CB(edo_core_msgs::LoadConfigurationFile::Request  &req, edo_core_msgs::LoadConfigurationFile::Response &res);
 	void feedbackFn();
 	bool initializeORL();
-	void feedbackFn(int type, int data);
+	void feedbackFn(int type, int data, const char *, int);
 	edo_core_msgs::JointsPositions computeJointValue(edo_core_msgs::CartesianPose cartesian_pose);
 	
 	ros::ServiceServer robot_switch_control_server;

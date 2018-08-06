@@ -32,104 +32,230 @@
  *  Created on: 14/giu/2017
  *      Author: comaudev
  */
+#include "CommonService.h"
+using namespace CommonService;
 
-#include "edo_core_msgs/JointStateArray.h"
-#include "edo_core_msgs/JointControlArray.h"
-#include "edo_core_msgs/JointMonitoring.h"
-#include "ros/ros.h"
-#include "std_msgs/String.h"
-#include <cstring>
-#include <cstdio>
-#include <climits>
-#include <sstream>
+#include "edo_recovery_node.hpp"
+
 /**
  * This function handles the movement message received from state machine node
  * - a movement command can not be executed until a valid jnt_state has been
  *   received from the recovery node
  */
-
-ros::Publisher pub_error;
-
-FILE *f_target;
-FILE *f_real;
-
-int scrivi = false;
-
-edo_core_msgs::JointControlArray last_ctrl_joint_msg;
-
-float distance_threashold = 5.0f;
-
-void movementCallback(edo_core_msgs::JointControlArray msg)
+Edo_Recovery_Node::Edo_Recovery_Node(ros::NodeHandle& node_obj)
 {
-	if (scrivi == true)
-	{
-	   struct timespec pino;
-	   clock_gettime(CLOCK_REALTIME,&pino);
-	   fprintf(f_target,"%ld.%09ld;",pino.tv_sec, pino.tv_nsec);
+  distance_threshold_ = 5.0f;
+  data_acquisition_in_progess_ = false;
+  f_target_ = NULL;
+  f_quote_ = NULL;
+  n_max_target_samples_ = N_MAX_SAMPLES;
+  n_max_quote_samples_ = N_MAX_SAMPLES;
+	ros::param::get("~th", distance_threshold_);
+	ros::Subscriber jnt_comm_subscriber = node_obj.subscribe("/algo_jnt_ctrl", 100, &Edo_Recovery_Node::movementCallback, this);
+	ros::Subscriber jnt_state_subscriber = node_obj.subscribe("/usb_jnt_state", 100, &Edo_Recovery_Node::statusCallback, this);
+	ros::Subscriber moni_subscriber = node_obj.subscribe("/machine_moni", 100, &Edo_Recovery_Node::moniCallback, this);
 
-		for(int i =0 ;i<msg.joints.size();i++)
-		{
-			fprintf(f_target,"%f;%f;%f;",msg.joints[i].position,msg.joints[i].velocity,msg.joints[i].current);
-		}
-		fprintf(f_target,"\n");
-	}
+	pub_error = node_obj.advertise<std_msgs::String>("/edo_error", 10);
 
-  // copia (allocato dinamicamente)
-  last_ctrl_joint_msg = edo_core_msgs::JointControlArray(msg);
+	ROS_INFO("Param %f", distance_threshold_);
+  
+	ros::spin();  // Endless loop
+
 }
 
-void statusCallback(edo_core_msgs::JointStateArray msg)
+/**
+ * Destructor of Edo_Recovery_Node
+ * - releases data
+ */
+Edo_Recovery_Node::~Edo_Recovery_Node()
 {
-	if (scrivi == true)
-	{
-		struct timespec pino;
-		clock_gettime(CLOCK_REALTIME,&pino);
-		fprintf(f_real,"%ld.%09ld;",pino.tv_sec, pino.tv_nsec);
-
-		for(int i =0 ;i<msg.joints.size();i++)
-		{
-			fprintf(f_real,"%f;%f;%f;",msg.joints[i].position,msg.joints[i].velocity,msg.joints[i].current);
-		}
-		fprintf(f_real,"\n");
-	}
-
-    for (int j = 0; j < last_ctrl_joint_msg.joints.size(); j++)
-	{
-		float dist = last_ctrl_joint_msg.joints[j].position - msg.joints[j].position;
-		if (abs(dist) > distance_threashold) 
-		{
-			std::stringstream ss;
-			ss << "error: on Joint " << j << " distance = " << dist;
-			std_msgs::String msg;
-			msg.data = ss.str();
-			pub_error.publish(msg);
-		}
+		data_acquisition_in_progess_ = false; // Disable data acquisition
+    targetlist_.clear();
+    quotelist_.clear();
+    if (f_quote_ != NULL)
+    {
+		  fclose(f_quote_);
+      f_quote_ = NULL;
+    }
+    if (f_target_ != NULL)
+    {
+		  fclose(f_target_);
+      f_target_ = NULL;
     }
 }
 
-void moniCallback(edo_core_msgs::JointMonitoring msg)
-{
-	if (msg.state == 1 && scrivi == false)
-	{ //apro il moni
-		char name[100];
-		time_t p = time(NULL);
-		struct tm* seconds = localtime(&p);
-		strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
-		strcat(name,msg.name.c_str());
-		strcat(name,"_real.txt");
-		f_real=fopen(name,"w");
 
-		strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
-		strcat(name,msg.name.c_str());
-		strcat(name,"_target.txt");
-		f_target=fopen(name,"w");
-		scrivi = true;
+
+void Edo_Recovery_Node::movementCallback(edo_core_msgs::JointControlArray msg)
+{
+  if (data_acquisition_in_progess_ == true)
+  {
+    if (n_max_target_samples_ != 0)
+    { 
+      int    nJoints;
+      
+      --n_max_target_samples_;
+
+      if ((nJoints = msg.joints.size()) <= SSM_NUM_MAX_JOINTS)
+      {
+        moniItem *mItemP = new moniItem;
+        struct timespec timestamp;
+        
+        clock_gettime(CLOCK_REALTIME,&timestamp);
+        mItemP->sec = timestamp.tv_sec;
+        mItemP->nsec = timestamp.tv_nsec; 
+
+        targetSize_ = nJoints;
+        for(int i =0 ;i < nJoints;i++)
+        {
+          mItemP->dv[i].position = msg.joints[i].position;
+          mItemP->dv[i].velocity = msg.joints[i].velocity;
+          mItemP->dv[i].current = msg.joints[i].current;
+        }  
+        targetlist_.push_back(*mItemP);
+        
+        // copia (allocato dinamicamente)
+        last_ctrl_joint_msg_ = edo_core_msgs::JointControlArray(msg);
+      }
+    }
+  }
+  return;
+}
+
+void Edo_Recovery_Node::statusCallback(edo_core_msgs::JointStateArray msg)
+{
+  if (data_acquisition_in_progess_ == true)
+  {
+    if (n_max_quote_samples_ != 0) 
+    {
+      int    nJoints;
+      
+      --n_max_quote_samples_;
+
+      if ((nJoints = msg.joints.size()) <= SSM_NUM_MAX_JOINTS)
+      {
+        moniItem *mItemP = new moniItem;
+        struct timespec timestamp;
+        
+        clock_gettime(CLOCK_REALTIME,&timestamp);
+        mItemP->sec = timestamp.tv_sec;
+        mItemP->nsec = timestamp.tv_nsec; 
+
+        quoteSize_ = nJoints;
+        for(int i =0 ;i < nJoints;i++)
+        {
+          mItemP->dv[i].position = msg.joints[i].position;
+          mItemP->dv[i].velocity = msg.joints[i].velocity;
+          mItemP->dv[i].current = msg.joints[i].current;
+        }  
+        quotelist_.push_back(*mItemP);
+      }
+      
+      for (int j = 0; j < last_ctrl_joint_msg_.joints.size(); j++)
+	    {
+	    	float dist = last_ctrl_joint_msg_.joints[j].position - msg.joints[j].position;
+	    	if (abs(dist) > distance_threshold_) 
+	    	{
+	    		std::stringstream ss;
+	    		ss << "error: on Joint " << j << " distance = " << dist;
+	    		std_msgs::String msg;
+	    		msg.data = ss.str();
+	    		pub_error.publish(msg);
+	    	}
+      }
+    }
+  }
+  return;
+}
+
+void Edo_Recovery_Node::moniCallback(edo_core_msgs::JointMonitoring msg)
+{
+	if (msg.state == 1)
+  {
+    // Do not re-activate if already active
+    if (data_acquisition_in_progess_ == false)
+    {  
+	    //open the data files
+		  char name[BUFSIZ];
+		  time_t p = time(NULL);
+		  struct tm* seconds = localtime(&p);
+      
+      name[0] = '\0';
+		  strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
+		  strcat(name,msg.name.c_str());
+		  strcat(name,"_real.txt");
+		  f_quote_=fopen(name,"w");
+      
+      name[0] = '\0';
+		  strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
+		  strcat(name,msg.name.c_str());
+		  strcat(name,"_target.txt");
+		  f_target_=fopen(name,"w");
+      
+      if ((f_target_ != NULL) && (f_quote_ != NULL))
+      {
+		    data_acquisition_in_progess_ = true;  // Enable data acquisition
+      }
+      else
+      {
+        if (f_quote_ != NULL)
+        {
+		      fclose(f_quote_);
+          f_quote_ = NULL;
+        }
+        if (f_target_ != NULL)
+        {
+		      fclose(f_target_);
+          f_target_ = NULL;
+        }
+      }
+    }
 	}
-	else
-	{ // chiudo il moni
-		fclose(f_real);
-		fclose(f_target);
-		scrivi = false;
+	if (msg.state == 0)
+	{ 
+    // Alway accept to close even if already closed.
+    // close the data file and stop data acquisition
+		data_acquisition_in_progess_ = false; // Disable data acquisition
+    
+    if ((!targetlist_.empty()) && (f_target_ != NULL))
+    {
+      for (std::list<moniItem>::iterator it=targetlist_.begin(); it != targetlist_.end(); ++it)
+      {
+        fprintf (f_target_,"%ld.%09ld;", it->sec, it->nsec);
+        for(int i =0 ;i < targetSize_;i++) 
+        {
+          fprintf(f_target_,"%f;%f;%f;",it->dv[i].position,it->dv[i].velocity,it->dv[i].current);
+        }
+        fprintf(f_target_,"\n");
+      }
+      targetlist_.clear();
+    }
+    if ((!quotelist_.empty()) && (f_quote_ != NULL))
+    {
+      for (std::list<moniItem>::iterator it=quotelist_.begin(); it != quotelist_.end(); ++it)
+      {
+        fprintf (f_quote_,"%ld.%09ld;", it->sec, it->nsec);
+        for(int i =0 ;i < quoteSize_;i++) 
+        {
+          fprintf(f_quote_,"%f;%f;%f;",it->dv[i].position,it->dv[i].velocity,it->dv[i].current);
+        }
+        fprintf(f_quote_,"\n");
+      }
+      quotelist_.clear();
+    }
+    
+    if (f_quote_ != NULL)
+    {
+		  fclose(f_quote_);
+      f_quote_ = NULL;
+    }
+    if (f_target_ != NULL)
+    {
+		  fclose(f_target_);
+      f_target_ = NULL;
+    }
+    n_max_target_samples_ = N_MAX_SAMPLES;
+    n_max_quote_samples_ = N_MAX_SAMPLES;
 	}
 }
 
@@ -137,16 +263,7 @@ int main(int argc, char **argv)
 {
 	ros::init(argc, argv,"edo_recovery");
 	ros::NodeHandle node_obj;
-	ros::param::get("~th", distance_threashold);
-	ros::Subscriber jnt_comm_subscriber = node_obj.subscribe("/algo_jnt_ctrl", 100, &movementCallback);
-	ros::Subscriber jnt_state_subscriber = node_obj.subscribe("/usb_jnt_state", 100, &statusCallback);
-	ros::Subscriber moni_subscriber = node_obj.subscribe("/machine_moni", 100, &moniCallback);
-
-	pub_error = node_obj.advertise<std_msgs::String>("/edo_error", 10);
-
-	ROS_INFO("Param %f", distance_threashold);
-
-	ros::spin();
+	Edo_Recovery_Node recovery(node_obj);
 
 	return 0;
 }

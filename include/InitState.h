@@ -76,10 +76,12 @@ private:
 	InternalState currentState;
 	SubscribePublish* SPinstance;
 	bool* jointInitState;
-	unsigned long long int jointToSet;
+	int jointToSet;
 	bool completeDiscovery;
 	uint8_t currentJointVersionID;
 	uint8_t versionRetries;
 };
+
+#define NUM_MAX_JOINTS 7
 
 #endif /* EDO_CORE_PKG_INCLUDE_INITSTATE_H_ */

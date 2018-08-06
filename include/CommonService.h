@@ -37,9 +37,22 @@
 #define EDO_CORE_PKG_INCLUDE_COMMONSERVICE_H_
 
 namespace CommonService {
-	unsigned int countBitMask(unsigned long long int mask);
+
+#define SSM_JOINTS_MASK 0x0000007F  // For the time being MAX 7 axes robot
+#define SSM_NUM_MAX_JOINTS       7  // Num max joints/axes
+
+// class CommonService
+// {
+// private:
+//   CommonService();
+//   CommonService(CommonService const&);
+//   CommonService& operator=(CommonService const&);
+// 	static CommonService* instance;
+// public:
+//   // Singleton getInstance
+//   static CommonService* getInstance();
+  unsigned int countBitMask(unsigned long mask);
+  unsigned int getLastJointAxis(unsigned long mask);
 };
-
-
 
 #endif /* EDO_CORE_PKG_INCLUDE_COMMONSERVICE_H_ */

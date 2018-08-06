@@ -102,13 +102,15 @@ State* NotCalibrateState::HandleJog(const edo_core_msgs::MovementCommand& msg) {
 	int jointsOk = 0;
 
 	// Nella fase di calibrazione si accetta solo il movimento di Jog in giunti...
-	if (msg.movement_type == JOG_CARLIN) { // Se il movimento è cartesiano si scarta...
-		ROS_INFO("JOG_CARLIN Command not available in current state.");
+	if ((msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGMOVE) &&
+       msg.move_type    == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR) { // Se il movimento è cartesiano...
+		ROS_INFO("[%d] Move Command %c not available with MOVE_TYPE %c in current state.",__LINE__,msg.move_command,msg.move_type);
 		return this;
-	} else if (msg.movement_type == JOG_STOP) {
+	} 
+  else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP) {
 		// Se sono in questo stato vuol dire che non ho ancora ricevuto il comando di start
 		// altrimenti sarei nello stato JogState
-		ROS_INFO("Jog movement is not active.");
+		ROS_INFO("[%d] Jog movement is not active.",__LINE__);
 		return this;
 	}
 

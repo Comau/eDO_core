@@ -49,6 +49,7 @@
 #include "edo_core_msgs/JointInit.h"
 #include "edo_core_msgs/MachineState.h"
 #include "edo_core_msgs/NodeSwVersionArray.h"
+#include "edo_core_msgs/LoadConfigurationFile.h"
 #include <std_msgs/UInt8.h>
 
 #include "StateManager.h"
@@ -94,6 +95,8 @@ private:
 	ros::Publisher machine_move_publisher;
 	// This is the topic where the node publishes the jog commands
 	ros::Publisher machine_jog_publisher;
+	// This is the topic where the node publishes the load configuration file commands
+  ros::ServiceClient algo_load_configuration_file_client;
 
 	// -------------- TOPIC FROM/TO USB/CAN MODULE --------------
 	// Topics for command CALIBRATE / RESET / CONFIGURATION
@@ -143,6 +146,7 @@ public:
 	void BridgeStatusMsg(const edo_core_msgs::JointStateArray& msg);
 	void MachineStateMsg(const edo_core_msgs::MachineState& msg);
 	void MachineSwVersionMsg(const std_msgs::UInt8& msg);
+  void LoadConfigurationFile();
 
 	int GetJointsNumber();
 	uint64_t GetMaskedJoints();

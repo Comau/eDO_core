@@ -65,15 +65,15 @@ void UsbJointState(const edo_core_msgs::JointStateArray msg) {
 }
 
 void MoveToTarget(const sensor_msgs::JointState group_variable_values) {
-
 	edo_core_msgs::MovementCommand msg;
 
-	msg.movement_type = 0; // joint space
-	msg.size  = group_variable_values.position.size();
+	msg.move_command = 'M'; // Execute a MOVE statement//
+  msg.move_type = 'J'; // E_MOVE_TYPE_JOINT// joint space
+  msg.target.data_type = 'J'; // E_MOVE_POINT_JOINT;
 	msg.ovr = 0;
 	for (std::size_t i = 0; i < group_variable_values.position.size(); i++)
 	{
-		msg.data.push_back(angles::to_degrees(group_variable_values.position[i])); //float32[] data
+		msg.target.joints_data.push_back(angles::to_degrees(group_variable_values.position[i])); //float32[] data
 	}
 	//msg.uint8[] movement_attributes
 	

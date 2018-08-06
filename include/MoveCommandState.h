@@ -40,7 +40,6 @@
 #include <vector>
 
 #include "State.h"
-#include "EdoMsgType.h"
 
 class MoveCommandState: public State  {
 public:

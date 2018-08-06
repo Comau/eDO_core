@@ -49,7 +49,6 @@
 #include "ros/ros.h"
 #include "EdoMsgType.h"
 
-
 enum MACHINE_CURRENT_STATE {
 	COMMAND_STATE = 255, /* Stato temporaneno quando c'è un comando in esecuzione */
 	INIT = 0, /* Stato iniziale */

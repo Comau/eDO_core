@@ -41,6 +41,7 @@
 
 #define HANDLE_VERSION 1
 #define VERSION_RETRIES 3
+#define DEVELOPMENT_RELEASE (1==0)
 
 
 bool handle_config = true;
@@ -87,58 +88,108 @@ void InitState::getCurrentState() {
 }
 
 State* InitState::HandleInit(const edo_core_msgs::JointInit msg) {
+  std::string pkg_path_ = ros::package::getPath("edo_core_pkg");
+  FILE *fptr;
+  unsigned long      sm_joints_mask;
+  int                jointsNum;
 
-	CommandState* commandInstance = CommandState::getInstance();
+  fptr = fopen((pkg_path_ + "/config/" + "LoadCnfgFileReport.log").c_str(),"a");
+  if (fptr == NULL)
+    fptr = stdout;
 
-	if(jointInitState == nullptr) {
-		SPinstance = SubscribePublish::getInstance();
-		jointInitState = new bool[SPinstance->GetJointsNumber()];
+  /* /home/edo/edo_core_catkin_ws/src/edo_core_pkg */
+  fprintf(fptr, "-------------------------------------------------------------\n");
+ 
+  sm_joints_mask = (unsigned long)msg.joints_mask;
+  fprintf(fptr, "[%s,%d] Mode: %d Mask: %d\n",__FILE__,__LINE__, msg.mode, sm_joints_mask);
+   // Se stiamo facendo la discovery di tutti i giunti del sistema e si riceve
+  // l'ack di questo messaggio, vuol dire che tutti i giunti hanno risposto
+  // quindi il sistema è inizializzato e si può uscire dallo stato di init
+  if (msg.mode == 0) {
+    currentState = DISCOVERY;
+    unsigned int jointsCount = CommonService::countBitMask(sm_joints_mask);
 
-		for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
-			jointInitState[i] = false;
-		}
-	}
+    fprintf(fptr, "[%s,%d] Requested a robot of: %d axes\n",__FILE__,__LINE__,jointsCount);
+    fprintf(fptr, "[%s,%d] %s\n",__FILE__,__LINE__,("rm "+ pkg_path_ + "/config/"+"robot.edo").c_str());
+    std::system(("rm "+pkg_path_ + "/config/"+"robot.edo").c_str());
+    if (jointsCount==4)
+    { /* 4 axes e.DO */
+      fprintf(fptr, "[%s,%d] %s\n",__FILE__,__LINE__,("/bin/cp "+pkg_path_ + "/config/"+"robot4.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+      std::system(("/bin/cp "+pkg_path_ + "/config/"+"robot4.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+    }
+    else if (jointsCount==7)
+    {
+      fprintf(fptr, "[%s,%d] %s\n",__FILE__,__LINE__,("/bin/cp "+pkg_path_ + "/config/"+"robot7.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+      std::system(("/bin/cp "+pkg_path_ + "/config/"+"robot7.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+    }
+    else
+    { /* Default is 6 axes e.DO */
+      fprintf(fptr, "[%s,%d] %s\n",__FILE__,__LINE__,("/bin/cp "+pkg_path_ + "/config/"+"robot6.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+      std::system(("/bin/cp "+pkg_path_ + "/config/"+"robot6.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+    }
+    {
+      SPinstance = SubscribePublish::getInstance();
+      SPinstance->LoadConfigurationFile();
 
-	// Se stiamo facendo la discovery di tutti i giunti del sistema e si riceve
-	// l'ack di questo messaggio, vuol dire che tutti i giunti hanno risposto
-	// quindi il sistema è inizializzato e si può uscire dallo stato di init
-	if (msg.mode == 0) {
+      jointsNum = SPinstance->GetJointsNumber();
+    }
+    fprintf(fptr, "[%s,%d] Initialized a robot of: %d axes\n",__FILE__,__LINE__, jointsNum);
+      
+    if (fptr != stdout)
+      fclose(fptr);
 
-		currentState = DISCOVERY;
+    if(jointsNum > 0)
+    {
+      if (jointInitState == nullptr)
+      {
+        jointInitState = new bool[jointsNum];
 
-		unsigned int jointsCount = CommonService::countBitMask(msg.joints_mask);
+        for (int i = 0; i < jointsNum; i++) 
+        {
+          jointInitState[i] = false;
+        }
+      }
 
-		ROS_INFO("jointsCount %d", jointsCount);
-		ROS_INFO("Algo joints %d", SPinstance->GetJointsNumber());
-		if (jointsCount == SPinstance->GetJointsNumber()) {
-			ROS_INFO("Complete Discovery");
-			completeDiscovery = true;
-		}
-	} else if (msg.mode == 1) {
+      ROS_INFO("Requested   a robot of: %d axes", jointsCount);
+      ROS_INFO("Initialized a robot of: %d axes", jointsNum);
+      if (jointsCount == jointsNum)
+      {
+        ROS_INFO("Complete Discovery");
+        completeDiscovery = true;
+      }
+    }
+  }
+  else if (msg.mode == 1)
+  {
+    SPinstance = SubscribePublish::getInstance();
+    currentState = SET;
+    jointsNum = SPinstance->GetJointsNumber();
+    // Salvo quale giunto sta per essere settato
+    for (int i = 0; i < jointsNum; i++) {
+      if ((msg.joints_mask & (1 << i)) == msg.joints_mask) {
+        jointToSet = i;
+        break;
+      }
+    }
+  }
+  else if (msg.mode == 2)
+  {
+    currentState = DELETE;
+  }
+  else if (msg.mode == 3)
+  {
+    SPinstance = SubscribePublish::getInstance();
+    currentState = MASK_JOINTS;
+    SPinstance->SetMaskedJoints(msg.joints_mask);
+    return this;
+  }
 
-		currentState = SET;
+  {
+    CommandState* commandInstance = CommandState::getInstance();
+    commandInstance->ExecuteCommand(this, msg);
 
-		// Salvo quale giunto sta per essere settato
-		for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
-
-			if ((msg.joints_mask & (1 << i)) == msg.joints_mask) {
-				jointToSet = i;
-				break;
-			}
-		}
-	} else if (msg.mode == 2) {
-
-		currentState = DELETE;
-	} else if (msg.mode == 3) {
-
-		currentState = MASK_JOINTS;
-		SPinstance->SetMaskedJoints(msg.joints_mask);
-		return this;
-	}
-
-	commandInstance->ExecuteCommand(this, msg);
-
-	return commandInstance;
+    return commandInstance;
+  }
 }
 
 State* InitState::ackCommand() {
@@ -159,20 +210,21 @@ State* InitState::ackCommand() {
 
 		jointInitState[jointToSet] = true;
 		int initializedJoints = 0;
+        int jointsNum = SPinstance->GetJointsNumber();
 
-		for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+		for (int i = 0; i < jointsNum; i++) {
 
 			if(jointInitState[i] == true) {
 				initializedJoints++;
 			}
 		}
 
-		if (initializedJoints == SPinstance->GetJointsNumber()) {
+		if (initializedJoints == jointsNum) {
 
 			return NotCalibrateState::getInstance();
 		}
 	} else if (currentState == GET_VERSION_DONE) {
-		
+    
 		if(handle_config){
 			currentState = SET_PID_PARAM;
 			edo_core_msgs::JointConfigurationArray msg;
@@ -206,7 +258,7 @@ State* InitState::ackCommand() {
 			CommandState* command = CommandState::getInstance();
 			command->ExecuteCommand(this, msg);
 			return command;
-		} else		
+		} else
 			return NotCalibrateState::getInstance();
 	} else if (currentState == JOINTS_RESET)
 		return NotCalibrateState::getInstance();
@@ -227,8 +279,13 @@ State* InitState::HandleJntVersion(bool timeout)
 
 		currentJointVersionID++;
 		versionRetries = 0;
-
-		if(currentJointVersionID <= SPinstance->GetJointsNumber()){
+    if (currentJointVersionID == 1)
+    {
+			ROS_INFO("Version Info received");
+			currentState = GET_VERSION_DONE;
+			return ackCommand();
+    }
+    else if(currentJointVersionID <= SPinstance->GetJointsNumber()){
 			ROS_INFO("Request Version Info to %d", currentJointVersionID);
 			std_msgs::UInt8 msg;
 			msg.data = currentJointVersionID;
@@ -284,7 +341,7 @@ void InitState::loadConfiguration( TiXmlNode* pParent, edo_core_msgs::JointConfi
 		//printf( "Element: [%s]", pParent->Value());
 		if(strcmp(pParent->Value(), "Joint") == 0){
 			countJoints++;
-			printf(" XML parse; joint counter: %d\n", countJoints);
+//			printf(" XML parse; joint counter: %d\n", countJoints);
 		} else if(strcmp(pParent->Value(), "Kpp") == 0)
 		{
 			double kpp;
@@ -411,27 +468,33 @@ void InitState::loadConfiguration( TiXmlNode* pParent, edo_core_msgs::JointConfi
 
 bool InitState::loadConfiguration(edo_core_msgs::JointConfigurationArray & msg, const char* pFilename)
 {
-	
-	TiXmlDocument doc(pFilename);
-	bool loadOkay = doc.LoadFile();
-	if (loadOkay)
-	{
-		printf("\n%s:\n", pFilename);
-		msg.joints.resize(SPinstance->GetJointsNumber());
-		int count = 0;
-		loadConfiguration( &doc, msg, count);
-		ROS_INFO("Joints found in XML: %d", count);
-	}
-	else
-	{
-		printf("Failed to load file \"%s\"\n", pFilename);
-		return false;
-		
-	}
-	
-	for (auto i = msg.joints.begin(); i != msg.joints.end(); ++i)
-		std::cout << *i << "\n";
-	
-	return true;
+  int jointsNum;
+  TiXmlDocument doc(pFilename);
+  bool loadOkay = doc.LoadFile();
+  if (loadOkay)
+  {
+//    printf("\n%s:\n", pFilename);
+    jointsNum = SPinstance->GetJointsNumber();
+    if (jointsNum <= 0)
+    {
+      jointsNum = NUM_MAX_JOINTS;
+    }
+    msg.joints.resize(jointsNum);
+    int count = 0;
+    loadConfiguration( &doc, msg, count);
+    ROS_INFO("Joints found in XML: %d", count);
+  }
+  else
+  {
+//    printf("Failed to load file \"%s\"\n", pFilename);
+    return false;
+  }
+
+#if DEVELOPMENT_RELEASE
+  for (auto i = msg.joints.begin(); i != msg.joints.end(); ++i)
+    std::cout << *i << "\n";
+#endif
+
+  return true;
 }
 

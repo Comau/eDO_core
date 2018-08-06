@@ -71,13 +71,14 @@ void StateManager::HandleJntState(const edo_core_msgs::JointStateArray& state) {
 	bool underVoltage = false;
 	bool uncalibrated = false;
 	bool jointNoComm = false;
-	
-	if(state.joints.size() != SPinstance->GetJointsNumber())
-		return;
+  int jointsNum = SPinstance->GetJointsNumber();
+
+  if((jointsNum <= 0) || (state.joints.size() != jointsNum))
+    return;
 	
 	// Inizializzazione
 	if(joints.empty()) {
-		joints.resize(SPinstance->GetJointsNumber());
+		joints.resize(jointsNum);
 
 		for(Joint j : joints) {
 			j.noReplyCounter = 0;
@@ -94,7 +95,7 @@ void StateManager::HandleJntState(const edo_core_msgs::JointStateArray& state) {
 		timerJointState.start();		
 	}
 	
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+	for (int i = 0; i < jointsNum; i++) {
 		// controllo se il giunto è presente
 		if ((state.joints_mask & (1 << i)) == (0 << i)) {
 			// il giunto non ha inviato lo stato
@@ -308,7 +309,7 @@ bool StateManager::getSwVersion(edo_core_msgs::SoftwareVersion::Request &req, ed
 	swVersion += ".";	
 	swVersion += std::to_string(EDO_SW_SVN);
 	
-	printf("Stringa: %s\n", swVersion.c_str());
+	//printf("Stringa: %s\n", swVersion.c_str());
 	res.version.nodes[index].id = 255;
 	res.version.nodes[index].version = swVersion;
 	

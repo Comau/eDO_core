@@ -17,6 +17,9 @@ from edo_core_msgs.msg import JointControl
 from edo_core_msgs.msg import MovementCommand
 from edo_core_msgs.msg import JointControlArray
 from edo_core_msgs.msg import MovementFeedback
+from edo_core_msgs.msg import CartesianPose
+from edo_core_msgs.msg import Point
+from edo_core_msgs.msg import Frame
 
 from edo_core_msgs.srv import ControlSwitch
 
@@ -89,8 +92,13 @@ if __name__ == '__main__':
                 ]
 
         #machine_move_pub = rospy.Publisher('machine_move', MovementCommand)
-        mmmsg = MovementCommand(0, len(joints), 25, joints, '0')
         #print mmmsg
+        
+        ros_cartesian_pose = CartesianPose(0.0,0.0,0.0,0.0,0.0,0.0,'')
+        ros_point =  Point(74, ros_cartesian_pose, 63, joints)
+        ros_frame =  Frame(0.0,0.0,0.0,0.0,0.0,0.0)
+        mmmsg = MovementCommand(77, 74, 25, 0, 0, 0.0, ros_point, ros_point, ros_frame, ros_frame)
+
 
         # publish move
         machine_move.publish(mmmsg)
@@ -117,7 +125,8 @@ if __name__ == '__main__':
             float(parsed[2]),
             float(parsed[3]),
             float(parsed[4]),
-            float(parsed[5])
+            float(parsed[5]),
+            float(parsed[6])
             ]
             #joints = [1, 2, 3, 4, 5, 6]
             #print(joints)

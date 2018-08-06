@@ -34,16 +34,25 @@
  */
 
 #include "CommandState.h"
+#include <algorithm>
+
+#define NUMBER_KINEMATICS_JOINTS 6
+#define NUM_MAX_JOINTS           7
 
 CommandState* CommandState::instance = NULL;
 
 CommandState::CommandState() {
-
+  int jointsNum;
 	SPinstance = SubscribePublish::getInstance();
-	currentState = new InternalState[SPinstance->GetJointsNumber()];
+  jointsNum = SPinstance->GetJointsNumber();
+  if (jointsNum <= 0)
+  {
+    jointsNum = NUM_MAX_JOINTS;
+  }
+	currentState = new InternalState[jointsNum];
 	machineCurrentState = MACHINE_CURRENT_STATE::COMMAND_STATE;
 
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+	for (int i = 0; i < jointsNum; i++) {
 		currentState[i] = NO_WAIT;
 	}
 
@@ -70,17 +79,19 @@ void CommandState::getCurrentState() {
 State* CommandState::HandleJntState(const edo_core_msgs::JointStateArray& state) {
 
 	SubscribePublish* SPinstance = SubscribePublish::getInstance();
+	int jointsNumber = SPinstance->GetJointsNumber(); 
+	uint32_t jointsMask = (uint32_t)state.joints_mask;
 
 	int commandJoints = 0;
-
 	/* Check if an Ack has been received */
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+	for (int i = 0; i < jointsNumber; i++, jointsMask >>= 1) {
 
-		if ((state.joints_mask & (1 << i)) == (1 << i)) {
+		if (jointsMask & 1) {
 			if ((currentState[i] == WAIT_HIGH) && isHighAck(state.joints[i].commandFlag)) {
+//				ROS_INFO("Ack accepted from joint %d", i+1);
 				currentState[i] = WAIT_LOW;
 			} else if ((currentState[i] == WAIT_LOW) && commandFlagIsLow(state.joints[i].commandFlag)) {
-				ROS_INFO("Ack received for joint %d", i+1);
+//				ROS_INFO("Ack received from joint %d", i+1);
 				currentState[i] = NO_WAIT;
 			}
 		}
@@ -90,7 +101,7 @@ State* CommandState::HandleJntState(const edo_core_msgs::JointStateArray& state)
 		}
 	}
 
-	if(commandJoints == SPinstance->GetJointsNumber()) {
+	if(commandJoints == jointsNumber) {
 		ROS_INFO("Ack command received");
 		timerAck.stop();
 		return previousState->ackCommand();
@@ -100,11 +111,13 @@ State* CommandState::HandleJntState(const edo_core_msgs::JointStateArray& state)
 }
 
 void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointCalibration& joints) {
+	uint32_t jointsMask = (uint32_t)joints.joints_mask;
+	int jointsNumber = std::min(SPinstance->GetJointsNumber(), NUMBER_KINEMATICS_JOINTS); 
 
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+	for (int i = 0; i < jointsNumber; i++, jointsMask >>= 1) {
 
-		if ((joints.joints_mask & (1 << i)) == (1 << i)) {
-			ROS_INFO("CALIB Mask with %d bit setted", i);
+		if (jointsMask & 1) {
+//			ROS_INFO("CALIB Mask with %d bit set", i);
 			currentState[i] = WAIT_HIGH;
 		} else {
 			currentState[i] = NO_WAIT;
@@ -118,11 +131,13 @@ void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointCalibr
 }
 
 void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointReset msg) {
+	uint32_t jointsMask = (uint32_t)msg.joints_mask;
+	int jointsNumber = std::min(SPinstance->GetJointsNumber(), NUMBER_KINEMATICS_JOINTS); 
+  
+	for (int i = 0; i < jointsNumber; i++, jointsMask >>= 1) {
 
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
-
-		if ((msg.joints_mask & (1 << i)) == (1 << i)) {
-			ROS_INFO("RESET Mask with %d bit setted", i);
+		if (jointsMask & 1) {
+//			ROS_INFO("RESET Mask with %d bit set", i);
 			currentState[i] = WAIT_HIGH;
 		} else {
 			currentState[i] = NO_WAIT;
@@ -136,11 +151,13 @@ void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointReset 
 }
 
 void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointConfigurationArray& joints) {
+	uint32_t jointsMask = (uint32_t)joints.joints_mask;
+	int jointsNumber = std::min(SPinstance->GetJointsNumber(), NUMBER_KINEMATICS_JOINTS); 
 
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+	for (int i = 0; i < jointsNumber; i++, jointsMask >>= 1) {
 
-		if ((joints.joints_mask & (1 << i)) == (1 << i)) {
-			ROS_INFO("CONFIG Mask with %d bit setted", i);
+		if (jointsMask & 1) {
+//			ROS_INFO("CONFIG Mask with %d bit set", i);
 			currentState[i] = WAIT_HIGH;
 		} else {
 			currentState[i] = NO_WAIT;
@@ -154,10 +171,12 @@ void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointConfig
 }
 
 void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointInit msg) {
+	uint32_t jointsMask = (uint32_t)msg.joints_mask;
+	int jointsNumber = SPinstance->GetJointsNumber(); 
 
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+	for (int i = 0; i < jointsNumber; i++, jointsMask >>= 1) {
 
-		if ((msg.joints_mask & (1 << i)) == (1 << i)) {
+		if (jointsMask & 1) {
 			currentState[i] = WAIT_HIGH;
 		} else {
 			currentState[i] = NO_WAIT;
@@ -179,11 +198,26 @@ void CommandState::ExecuteCommand(State* state, const std_msgs::UInt8 msg) {
 }
 
 void CommandState::timerCallback(const ros::TimerEvent& event) {
-
-	timerAck.stop();
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
-		ROS_INFO("Ack status for joint %d: %d", i+1, currentState[i]);
-	}
+  int jointsNumber = SPinstance->GetJointsNumber();
+  timerAck.stop();
+  if (jointsNumber > 0)
+  {
+    for (int i = 0; i < jointsNumber; i++)
+    {
+      if (currentState[i] == 0)
+      {
+//		    ROS_INFO("        Ack status for joint %d: %d", i+1, currentState[i]);
+      }
+      else
+      {
+		    ROS_INFO("Timeout Ack status for joint %d: %d", i+1, currentState[i]);
+	  }
+    }
+  }
+  else
+  {
+		ROS_INFO("No Joints");
+  }
 	SPinstance->ackTimeout(previousState);
 }
 

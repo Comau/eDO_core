@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(edo_core)
+project(edo_core_pkg)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11 -g)
@@ -129,7 +129,7 @@ add_dependencies(edo_jnt_handler ${catkin_EXPORTED_TARGETS})
 target_link_libraries(edo_jnt_handler ${catkin_LIBRARIES})
 
 # edo_algorithms node
-add_executable(edo_algorithms src/edo_algorithms_node.cpp src/AlgorithmManager.cpp)
+add_executable(edo_algorithms src/edo_algorithms_node.cpp src/AlgorithmManager.cpp src/CommonService.cpp)
 add_dependencies(edo_algorithms ${catkin_EXPORTED_TARGETS})
 target_link_libraries(edo_algorithms ${catkin_LIBRARIES})
 target_link_libraries(edo_algorithms ${catkin_LIBRARIES} "/opt/orl/lib/libeORL.so")

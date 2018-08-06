@@ -36,12 +36,44 @@
 #include "CommonService.h"
 
 // count the number of bits set in mask
-unsigned int CommonService::countBitMask (unsigned long long int mask) {
-	unsigned int count; // c accumulates the total bits set in mask
-	for (count = 0; mask; count++)
-	{
-		mask &= mask - 1; // clear the least significant bit set
-	}
+unsigned int CommonService::countBitMask (unsigned long asm_mask) {
+  unsigned int sj_num_bits; 
+  unsigned int sj_last_joint;
+  unsigned int sj_i;
 
-	return count;
+  asm_mask &= SSM_JOINTS_MASK;
+  if (asm_mask == 0)
+    return (0);
+
+  for (sj_i = 0, sj_num_bits = 0, sj_last_joint = 0; asm_mask != 0; asm_mask >>= 1, sj_i++)
+  {
+    if (asm_mask & 1) {
+      sj_num_bits += 1;    // accumulates the total bits set in mask
+      sj_last_joint = sj_i+1; // it can be the last
+    }
+  }
+
+  return sj_num_bits;
+}
+
+unsigned int CommonService::getLastJointAxis (unsigned long asm_mask) {
+  unsigned int sj_num_bits; 
+  unsigned int sj_last_joint;
+  unsigned int sj_i;
+  
+  asm_mask &= SSM_JOINTS_MASK;
+  if (asm_mask == 0)
+    return (0);
+  
+  for (sj_i = 0, sj_num_bits = 0, sj_last_joint = 0; asm_mask != 0; asm_mask >>= 1, sj_i++)
+  {
+    if (asm_mask & 1) {
+      sj_num_bits += 1;    // accumulates the total bits set in mask
+      sj_last_joint = sj_i+1; // it can be the last
+    }
+  }
+
+  if (sj_last_joint > SSM_NUM_MAX_JOINTS)
+    sj_last_joint = SSM_NUM_MAX_JOINTS;
+  return sj_last_joint;
 }

@@ -77,17 +77,17 @@ State* MoveCommandState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ac
 		// Aggiorno lo stato interno
 		if(internalState == INTERNAL_STATE::CANCEL){
 			edo_core_msgs::MovementCommand cancelMsg;
-			cancelMsg.movement_type = MOVE_CANCEL;
+			cancelMsg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL;
 			ExecuteNextMove(cancelMsg);
 			return previousState;
 		} else if(internalState == INTERNAL_STATE::IDLE){ // rimuovo il waypoint eseguito
 			if(!moveMsgBuffer.empty()){
 				moveMsgBuffer.erase(moveMsgBuffer.begin());
-				std::cout << "Removed point: buf size " << moveMsgBuffer.size() << '\n';
+				// std::cout << "Removed point: buf size " << moveMsgBuffer.size() << '\n';
 			}
 		} else if(internalState == INTERNAL_STATE::RESUME){ // rimuovo il waypoint eseguito
 			internalState = INTERNAL_STATE::IDLE;
-			std::cout << "Resume move: buf size " << moveMsgBuffer.size() << '\n';
+			// std::cout << "Resume move: buf size " << moveMsgBuffer.size() << '\n';
 		}
 
 		counterAckReceived++;
@@ -138,7 +138,7 @@ State* MoveCommandState::HandleMove(const edo_core_msgs::MovementCommand& msg) {
 		return this;
 	}
 
-	if(!InternalStateIsValid(msg.movement_type)){
+	if(!InternalStateIsValid(msg.move_command)){
 		SendMovementAck(COMMAND_REJECTED, 0);
 		if(moveMsgBuffer.empty())
 			return previousState;
@@ -146,39 +146,37 @@ State* MoveCommandState::HandleMove(const edo_core_msgs::MovementCommand& msg) {
 	}
 
 	// messaggio valido, aggiorno lo stato interno
-	if (internalState == INTERNAL_STATE::IDLE && msg.movement_type == MOVE_PAUSE){
+	if ((internalState == INTERNAL_STATE::IDLE) && (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE))
+  {
 		internalState = INTERNAL_STATE::PAUSE;
-	} else if(internalState == INTERNAL_STATE::PAUSE && msg.movement_type == MOVE_RESUME){
+	} else if((internalState == INTERNAL_STATE::PAUSE) && (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME))
+  {
 		internalState = INTERNAL_STATE::RESUME;
-	} else if(msg.movement_type == MOVE_CANCEL){
+	} else if(msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL)
+  {
 		internalState = INTERNAL_STATE::CANCEL;
 	}
 
 	// controllo il movemente type e genero output
-	switch(msg.movement_type){
-
-	case MOVE_MESSAGE_TYPE::MOVE_PAUSE:
+  if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE)
 	{
 		SendMovementAck(COMMAND_RECEIVED, 0);
 		return ExecuteNextMove(msg);
-		break;
 	}
-	case MOVE_MESSAGE_TYPE::MOVE_CANCEL:
+	else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL)
 	{
 		SendMovementAck(COMMAND_RECEIVED, 0);
 		moveMsgBuffer.clear();
 		edo_core_msgs::MovementCommand txMsg;
-		txMsg.movement_type = MOVE_MESSAGE_TYPE::MOVE_PAUSE;
+		txMsg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE;
 		return ExecuteNextMove(txMsg);
-		break;
 	}
-	case MOVE_MESSAGE_TYPE::MOVE_RESUME:
+	else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME)
 	{
 		SendMovementAck(COMMAND_RECEIVED, 0);
 		return ExecuteNextMove(msg);
-		break;
 	}
-	default: // è una move
+	else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_MOVE) // e' una move
 	{
 		if(moveMsgBuffer.size() >= bufferSize){
 			SendMovementAck(BUFFER_FULL, 0);
@@ -202,9 +200,10 @@ State* MoveCommandState::HandleMove(const edo_core_msgs::MovementCommand& msg) {
 			firstSent = true;
 			return ExecuteNextMove(moveMsgBuffer.front());
 		}
-
-		break;
 	}
+	else 
+	{
+	  return nullptr; // Cosa e'?
 	}
 
 	return this;
@@ -228,38 +227,49 @@ State* MoveCommandState::StartMove(State* state, const edo_core_msgs::MovementCo
 
 bool MoveCommandState::MessageIsValid(const edo_core_msgs::MovementCommand& msg) {
 
-	if((msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_CANCEL) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_CARCIR_C) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_CARCIR_J) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_CARLIN_C) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_CARLIN_J) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_PAUSE) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_RESUME) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_TRJNT_C) &&
-			(msg.movement_type != MOVE_MESSAGE_TYPE::MOVE_TRJNT_J)) /* unrecognized message*/
-		return false;
-
-	return true;
+  if ((msg.move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME) &&
+      (msg.move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE)  &&
+      (msg.move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL) &&
+      (msg.move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_MOVE))
+  {
+    return false;
+  }
+  
+  if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_MOVE)
+  {
+    if ((msg.move_type != E_MOVE_TYPE::E_MOVE_TYPE_JOINT)    &&
+        (msg.move_type != E_MOVE_TYPE::E_MOVE_TYPE_LINEAR)   &&
+        (msg.move_type != E_MOVE_TYPE::E_MOVE_TYPE_CIRCULAR))
+    {
+      return false;
+    }
+    if ((msg.target.data_type != E_MOVE_DEST_POINT::E_MOVE_POINT_JOINT)      &&
+        (msg.target.data_type != E_MOVE_DEST_POINT::E_MOVE_POINT_POSITION)   &&
+        (msg.target.data_type != E_MOVE_DEST_POINT::E_MOVE_POINT_XTND_POS))
+    {
+      return false;
+    }
+  }
+  return true;
 }
 
-bool MoveCommandState::InternalStateIsValid(uint8_t moveType){
+bool MoveCommandState::InternalStateIsValid(uint8_t moveCommand){
 
-	switch(internalState){
+  if (internalState == INTERNAL_STATE::CANCEL)
+  {
+    if((moveCommand != E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL) &&
+       (moveCommand != E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE))
+      return false;
+  }
+  else if (internalState == INTERNAL_STATE::PAUSE)
+  {
+    if((moveCommand != E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL) &&
+       (moveCommand != E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE)  &&
+       (moveCommand != E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME))
+      return false;
+  }
 
-	case INTERNAL_STATE::CANCEL:
-		if((moveType != MOVE_MESSAGE_TYPE::MOVE_CANCEL) &&
-				(moveType != MOVE_MESSAGE_TYPE::MOVE_PAUSE))
-			return false;
-		break;
-	case INTERNAL_STATE::PAUSE:
-		if((moveType != MOVE_MESSAGE_TYPE::MOVE_CANCEL) &&
-				(moveType != MOVE_MESSAGE_TYPE::MOVE_PAUSE) &&
-				(moveType != MOVE_MESSAGE_TYPE::MOVE_RESUME))
-			return false;
-		break;
-	}
-
-	return true;
+  return true;
 }
 
 void MoveCommandState::SendMovementAck(const MESSAGE_FEEDBACK& ackType, int8_t data){

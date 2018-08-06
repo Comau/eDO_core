@@ -35,6 +35,7 @@
 
 #include "JogState.h"
 #include "SubscribePublish.h"
+#define DEVELOPMENT_RELEASE (1==0)
 
 JogState* JogState::instance = NULL;
 
@@ -60,49 +61,69 @@ JogState* JogState::getInstance() {
 
 void JogState::getCurrentState() {
 
+#if DEVELOPMENT_RELEASE
 	ROS_INFO("Current State is: JOG");
+#endif
+  return;
 }
 
 State* JogState::HandleJog(const edo_core_msgs::MovementCommand& msg) {
 
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
+  SubscribePublish* SPInstance = SubscribePublish::getInstance();
 
-	if ((msg.movement_type == JOG_TRJNT)||(msg.movement_type == JOG_CARLIN)) {
+  if ((msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGMOVE) && ((msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_JOINT)||(msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR))) {
 
-		// Ad ogni refresh di JOG ri-avvio il timer.
-		timerMsg.stop();
-		
-		// Se lo stato è STOPPED è la prima richiesta di JOG...
-		if (currentState == STOPPED) {
-			currentState = MOVING;
-			currentJogCommand = msg;
-			SPInstance->JogMsg(msg);
-		} else if (currentState == MOVING){
-			// Controllo che il vettore dati nel messaggio sia uguale a quello corrente
-			if(msg.data != currentJogCommand.data){
-				ROS_INFO("Jog command wrong");
-				return StopJog();
-			}
-		}
-		
-		timerMsg.start();
-	}
-
-	return this;
+    // Ad ogni refresh di JOG ri-avvio il timer.
+    timerMsg.stop();
+    
+    // Se lo stato è STOPPED è la prima richiesta di JOG...
+    if (currentState == STOPPED) {
+      currentState = MOVING;
+      currentJogCommand = msg;
+      SPInstance->JogMsg(msg);
+    } else if (currentState == MOVING){
+      if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_JOINT)
+      {
+        // Controllo che il vettore dati nel messaggio sia uguale a quello corrente
+        if(msg.target.joints_data != currentJogCommand.target.joints_data){
+          ROS_INFO("Jog command wrong");
+          return StopJog();
+        }
+      }
+      else if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR)
+      {
+        // Controllo che il vettore dati nel messaggio sia uguale a quello corrente
+        if(
+           (msg.target.cartesian_data.x != currentJogCommand.target.cartesian_data.x) ||
+           (msg.target.cartesian_data.y != currentJogCommand.target.cartesian_data.y) ||
+           (msg.target.cartesian_data.z != currentJogCommand.target.cartesian_data.z) ||
+           (msg.target.cartesian_data.a != currentJogCommand.target.cartesian_data.a) ||
+           (msg.target.cartesian_data.e != currentJogCommand.target.cartesian_data.e) ||
+           (msg.target.cartesian_data.r != currentJogCommand.target.cartesian_data.r))
+        {
+          ROS_INFO("Jog command wrong");
+          return StopJog();
+        }
+      }
+    }
+    
+    timerMsg.start();
+  }
+  return this;
 }
 
 State* JogState::ExecuteJog(State* state, const edo_core_msgs::MovementCommand& msg) {
-	previousState = state;
-	return HandleJog(msg);
+  previousState = state;
+  return HandleJog(msg);
 }
 
 State* JogState::StopJog() {
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
-	edo_core_msgs::MovementCommand msg;
-	msg.movement_type = JOG_STOP;
-	SPInstance->JogMsg(msg);
-	//return HandleJog(msg);
-	return previousState;
+  SubscribePublish* SPInstance = SubscribePublish::getInstance();
+  edo_core_msgs::MovementCommand msg;
+  msg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP;
+  SPInstance->JogMsg(msg);
+  //return HandleJog(msg);
+  return previousState;
 }
 
 void JogState::timerCallback(const ros::TimerEvent& event) {

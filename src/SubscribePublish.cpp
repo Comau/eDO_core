@@ -66,6 +66,7 @@ SubscribePublish::SubscribePublish()
 	machine_algo_jnt_state_publisher = node_obj.advertise<edo_core_msgs::JointStateArray>("/machine_algo_jnt_state", 100);
 	machine_move_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/machine_move", 100);
 	machine_jog_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/machine_jog", 100);
+	algo_load_configuration_file_client = node_obj.serviceClient<edo_core_msgs::LoadConfigurationFile>("/algo_load_configuration_file_srv");
 
 	// -------------- TOPIC FROM/TO USB/CAN MODULE --------------
 	machine_jnt_calib_publisher = node_obj.advertise<edo_core_msgs::JointCalibration>("/machine_jnt_calib",10);
@@ -151,21 +152,34 @@ void SubscribePublish::MachineSwVersionMsg(const std_msgs::UInt8& msg)
 
 int SubscribePublish::GetJointsNumber() {
 
-	edo_core_msgs::JointsNumber srv;
+  edo_core_msgs::JointsNumber srv;
 
-	if (jointsNumber == -1) {
-		algo_jnt_number_client.call(srv);
+  if (jointsNumber < 0) {
+    algo_jnt_number_client.call(srv);
 
-		if(srv.response.counter != -1) {
-			jointsNumber = srv.response.counter;
-		}
-	}
+    if(srv.response.counter > 0) {
+      jointsNumber = srv.response.counter;
+    }
+  }
 
-	return jointsNumber;
+  return jointsNumber;
 }
 
 uint64_t SubscribePublish::GetMaskedJoints() {
 	return maskedJoints;
+}
+
+void SubscribePublish::LoadConfigurationFile() {
+
+	edo_core_msgs::LoadConfigurationFile lcf;
+
+  algo_load_configuration_file_client.call(lcf);
+
+  if (lcf.response.result == false)
+  {
+    ROS_ERROR("Failure loading configuration file");
+  }
+  return;
 }
 
 void SubscribePublish::SetMaskedJoints(const uint64_t& mask) {

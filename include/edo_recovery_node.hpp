@@ -27,44 +27,66 @@
   either expressed or implied, of the FreeBSD Project.
 */
 /*
- * Errortate.cpp
+ * edo_algorithms_node.cpp
  *
- *  Created on: Sep 18, 2017
- *      Author: comau
+ *  Created on: 14/giu/2017
+ *      Author: comaudev
  */
+#ifndef EDO_CORE_PKG_INCLUDE_EDORECOVERYNODE_HPP_
+#define EDO_CORE_PKG_INCLUDE_EDORECOVERYNODE_HPP_
 
-#include "ErrorState.h"
-#include <stdlib.h>
-#include "EdoMsgType.h"
+#include "edo_core_msgs/JointStateArray.h"
+#include "edo_core_msgs/JointControlArray.h"
+#include "edo_core_msgs/JointMonitoring.h"
+#include "ros/ros.h"
+#include "std_msgs/String.h"
+#include <cstring>
+#include <cstdio>
+#include <climits>
+#include <sstream>
 
-ErrorState* ErrorState::instance = NULL;
+class Edo_Recovery_Node
+{
+public:
 
-ErrorState::ErrorState() {
+#define N_MAX_SAMPLES (300 * 100)  // 300s of samples (100 samples per second)  
 
-	machineCurrentState = MACHINE_CURRENT_STATE::MACHINE_ERROR;
-}
+	Edo_Recovery_Node(ros::NodeHandle&);
+	~Edo_Recovery_Node();
+  void moniCallback(edo_core_msgs::JointMonitoring msg);
+  void statusCallback(edo_core_msgs::JointStateArray msg);
+  void movementCallback(edo_core_msgs::JointControlArray msg);
+  
+private:
 
-ErrorState* ErrorState::getInstance() {
+  struct dataValues {
+    float position;
+    float velocity;
+    float current;
+  };
+  
+  struct moniItem {
+    time_t   sec;
+    long int nsec;
+    dataValues dv[SSM_NUM_MAX_JOINTS];
+  };
+  
+  ros::Publisher pub_error;
 
-	if (instance == NULL) {
-		instance = new ErrorState();
-	}
+  FILE *f_target_;
+  FILE *f_quote_;
 
-	// chiama la sysCall di rilascio relè K3 e ferma la macchina
-	system("edo_stop");
-		
-	// Invio una Move Cancel se sono finito in questo stato
-	edo_core_msgs::MovementCommand msg;
-	msg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL;
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
-	SPInstance->MoveMsg(msg);
+  bool data_acquisition_in_progess_;
+  unsigned int n_max_target_samples_;
+  unsigned int n_max_quote_samples_;
+  edo_core_msgs::JointControlArray last_ctrl_joint_msg_;
 
-	return instance;
-}
+  float distance_threshold_;
+  int                 targetSize_;
+  int                 quoteSize_;
+	std::list<moniItem> targetlist_;
+	std::list<moniItem> quotelist_;
+  
+};
 
-void ErrorState::getCurrentState() {
-
-	ROS_INFO("Current State is: ERROR");
-}
-
-
+#endif
