@@ -123,9 +123,19 @@ State* InitState::HandleInit(const edo_core_msgs::JointInit msg) {
       std::system(("/bin/cp "+pkg_path_ + "/config/"+"robot7.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
     }
     else
-    { /* Default is 6 axes e.DO */
-      fprintf(fptr, "[%s,%d] %s\n",__FILE__,__LINE__,("/bin/cp "+pkg_path_ + "/config/"+"robot6.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
-      std::system(("/bin/cp "+pkg_path_ + "/config/"+"robot6.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+    { 
+      if(msg.reduction_factor != 0.0)
+      {
+         /* Default is 6 axes e.DO */
+        fprintf(fptr, "[%s,%d] %s\n",__FILE__,__LINE__,("/bin/cp "+pkg_path_ + "/config/"+"robot6_1.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+        std::system(("/bin/cp "+pkg_path_ + "/config/"+"robot6_1.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+      }
+      else
+      {
+        /* Default is 6 axes e.DO */
+        fprintf(fptr, "[%s,%d] %s\n",__FILE__,__LINE__,("/bin/cp "+pkg_path_ + "/config/"+"robot6.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+        std::system(("/bin/cp "+pkg_path_ + "/config/"+"robot6_0.edo"+" "+pkg_path_ + "/config/"+"robot.edo").c_str());
+      }
     }
     {
       SPinstance = SubscribePublish::getInstance();
@@ -176,7 +186,7 @@ State* InitState::HandleInit(const edo_core_msgs::JointInit msg) {
   {
     currentState = DELETE;
   }
-  else if (msg.mode == 3)
+  else if (msg.mode == 4)
   {
     SPinstance = SubscribePublish::getInstance();
     currentState = MASK_JOINTS;
@@ -195,22 +205,22 @@ State* InitState::HandleInit(const edo_core_msgs::JointInit msg) {
 State* InitState::ackCommand() {
 
 	machineCurrentState = MACHINE_CURRENT_STATE::INIT;
-	
+
 	if ((currentState == DISCOVERY) && (completeDiscovery == true))
 	{
 #if HANDLE_VERSION
 		currentState = GET_VERSION;
 		currentJointVersionID = 0;
 		return HandleJntVersion(true);
-#else		
+#else
 		return NotCalibrateState::getInstance();
-#endif		
+#endif
 
 	} else if (currentState == SET) {
 
 		jointInitState[jointToSet] = true;
 		int initializedJoints = 0;
-        int jointsNum = SPinstance->GetJointsNumber();
+		int jointsNum = SPinstance->GetJointsNumber();
 
 		for (int i = 0; i < jointsNum; i++) {
 

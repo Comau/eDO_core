@@ -39,6 +39,15 @@
 #define NUMBER_KINEMATICS_JOINTS 6
 #define NUM_MAX_JOINTS           7
 
+float _curr_limit[6][4] = {
+  {0.1f, 0.3f, 0.6f, 10.0f},
+  {0.1f, 0.9f, 1.2f, 10.0f},
+  {0.1f, 0.6f, 0.9f, 10.0f},
+  {0.1f, 0.2f, 0.3f, 10.0f},
+  {0.1f, 0.3f, 0.4f, 10.0f},
+  {0.1f, 0.1f, 0.3f, 10.0f}
+}; 
+
 CommandState* CommandState::instance = NULL;
 
 CommandState::CommandState() {
@@ -170,10 +179,11 @@ void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointConfig
 	SPinstance->ConfigureMsg(joints);
 }
 
-void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointInit msg) {
+void CommandState::ExecuteCommand(State* state, edo_core_msgs::JointInit msg) {
 	uint32_t jointsMask = (uint32_t)msg.joints_mask;
 	int jointsNumber = SPinstance->GetJointsNumber(); 
-
+  edo_core_msgs::JointInit msg_init;
+  
 	for (int i = 0; i < jointsNumber; i++, jointsMask >>= 1) {
 
 		if (jointsMask & 1) {
@@ -181,6 +191,23 @@ void CommandState::ExecuteCommand(State* state, const edo_core_msgs::JointInit m
 		} else {
 			currentState[i] = NO_WAIT;
 		}
+    
+    if(msg.mode == 3)
+    {
+      if (msg.reduction_factor == 1.0f)
+      {
+        msg.reduction_factor = _curr_limit[i][1];
+      }
+      else if (msg.reduction_factor == 2.0f)
+      {
+        msg.reduction_factor = _curr_limit[i][2];
+      } 
+      else if (msg.reduction_factor == 3.0f)
+      {
+        msg.reduction_factor = _curr_limit[i][3];
+      }
+    }
+  
 	}
 
 	previousState = state;

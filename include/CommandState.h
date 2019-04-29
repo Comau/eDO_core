@@ -50,7 +50,7 @@ public:
 	void ExecuteCommand(State* state, const edo_core_msgs::JointCalibration& joints);
 	void ExecuteCommand(State* state, const edo_core_msgs::JointReset mask);
 	void ExecuteCommand(State* state, const edo_core_msgs::JointConfigurationArray& joints);
-	void ExecuteCommand(State* state, const edo_core_msgs::JointInit msg);
+	void ExecuteCommand(State* state, edo_core_msgs::JointInit msg);
 	void ExecuteCommand(State* state, const std_msgs::UInt8 msg);
 
 private:

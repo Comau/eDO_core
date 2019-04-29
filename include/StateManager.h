@@ -46,6 +46,8 @@
 #include "edo_core_msgs/MovementFeedback.h"
 #include "edo_core_msgs/JointFwVersionArray.h"
 #include "edo_core_msgs/SoftwareVersion.h"
+#include "edo_core_msgs/CollisionFromAlgoToState.h"
+
 #include "State.h"
 
 class StateManager {
@@ -68,8 +70,14 @@ public:
 	const uint8_t & getMachineState();
 	const uint32_t & getMachineOpcode();
 	bool getSwVersion(edo_core_msgs::SoftwareVersion::Request &req, edo_core_msgs::SoftwareVersion::Response &res);
-
+	bool getInfo(std::string& hwinfo, std::string& swinfo);
+	
+	void HandleAlgoCollision(const edo_core_msgs::CollisionFromAlgoToState& msg);
+	void set_underVoltage_Timer_true();
+	void set_underVoltage_Timer_false();
+	
 	ros::Timer timerJointVersion;
+	
 private:
 
 	struct Joint {
@@ -80,13 +88,18 @@ private:
 	void timerJointStateCallback(const ros::TimerEvent& event);
 	void timerJointVersionCallback(const ros::TimerEvent& event);
 	void setMachineOpcode(const uint8_t bit, const bool set);
-
+	
+	void unbrakeTimerCallback(const ros::TimerEvent& event);
+	
 	State *current;
 	std::vector<Joint> joints;
 	std::string usbVersion;
 	ros::NodeHandle privateNh;
 	ros::Timer timerJointState;
 	uint32_t machineOpcode;
+	
+	bool underVoltage_Timer;
+	bool underVoltage_Algo;
 };
 
 #endif /* EDO_CORE_PKG_SRC_STATEMANAGER_H_ */

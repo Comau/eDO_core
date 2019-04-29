@@ -63,6 +63,9 @@ SubscribePublish::SubscribePublish()
 	// -------------- TOPIC FROM/TO ALGORITHM NODE --------------
 	algo_jnt_number_client = node_obj.serviceClient<edo_core_msgs::JointsNumber>("/algo_jnt_number_srv");
 	algo_move_ack_subscriber = node_obj.subscribe("/algo_movement_ack", 200, &StateManager::HandleMoveAck, &manager);
+	
+	algo_collision_subscriber = node_obj.subscribe("/algo_collision", 10, &StateManager::HandleAlgoCollision, &manager);							  
+	
 	machine_algo_jnt_state_publisher = node_obj.advertise<edo_core_msgs::JointStateArray>("/machine_algo_jnt_state", 100);
 	machine_move_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/machine_move", 100);
 	machine_jog_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/machine_jog", 100);
@@ -85,6 +88,8 @@ SubscribePublish::SubscribePublish()
 
 	machineStateTimer = node_obj.createTimer(ros::Duration(0.1), &SubscribePublish::timerMachineStateCallback, this);
 	machineStateTimer.start();
+	
+	collTimer = node_obj.createTimer(ros::Duration(11), &SubscribePublish::unbrakeTimerCallback, this, true, false);
 }
 
 void SubscribePublish::CalibrationMsg(edo_core_msgs::JointCalibration msg)
@@ -97,6 +102,9 @@ void SubscribePublish::ResetMsg(edo_core_msgs::JointReset msg)
 {
 	ROS_INFO_ONCE("Publish Reset Msg");
 	machine_jnt_reset_publisher.publish(msg);
+	//start the collsion timer just after the reset msg is sent
+	collTimer.start();
+	manager.set_underVoltage_Timer_false();
 }
 
 void SubscribePublish::ConfigureMsg(edo_core_msgs::JointConfigurationArray msg)
@@ -124,13 +132,13 @@ void SubscribePublish::MoveMsg(const edo_core_msgs::MovementCommand& msg)
 
 void SubscribePublish::MoveAck(const edo_core_msgs::MovementFeedback& ack)
 {
-	ROS_INFO_ONCE("Publish MoveAck Msg");
+	// ROS_INFO_ONCE("Publish MoveAck Msg");
 	machine_move_ack_publisher.publish(ack);
 }
 
 void SubscribePublish::AlgorithmStatusMsg(const edo_core_msgs::JointStateArray& msg)
 {
-	ROS_INFO_ONCE("Publish State Msg");
+	// ROS_INFO_ONCE("Publish State Msg");
 	machine_algo_jnt_state_publisher.publish(msg);
 }
 
@@ -150,26 +158,28 @@ void SubscribePublish::MachineSwVersionMsg(const std_msgs::UInt8& msg)
 	machine_jnt_version_publisher.publish(msg);
 }
 
-int SubscribePublish::GetJointsNumber() {
+int SubscribePublish::GetJointsNumber() 
+{
+	edo_core_msgs::JointsNumber srv;
 
-  edo_core_msgs::JointsNumber srv;
+	if (jointsNumber < 0) 
+	{
+		algo_jnt_number_client.call(srv);
 
-  if (jointsNumber < 0) {
-    algo_jnt_number_client.call(srv);
-
-    if(srv.response.counter > 0) {
-      jointsNumber = srv.response.counter;
-    }
-  }
-
-  return jointsNumber;
+		if(srv.response.counter > 0) 
+		{
+			jointsNumber = srv.response.counter;
+		}
+	}
+	return jointsNumber;
 }
 
 uint64_t SubscribePublish::GetMaskedJoints() {
 	return maskedJoints;
 }
 
-void SubscribePublish::LoadConfigurationFile() {
+void SubscribePublish::LoadConfigurationFile() 
+{
 
 	edo_core_msgs::LoadConfigurationFile lcf;
 
@@ -186,22 +196,31 @@ void SubscribePublish::SetMaskedJoints(const uint64_t& mask) {
 	maskedJoints = mask;
 }
 
-void SubscribePublish::ackTimeout(State* previous) {
-
+void SubscribePublish::ackTimeout(State* previous) 
+{
 	manager.ackTimeout(previous);
 
 }
 
-void SubscribePublish::moveTimeout(State* previous) {
-
+void SubscribePublish::moveTimeout(State* previous) 
+{
 	manager.moveTimeout(previous);
 
 }
 
-void SubscribePublish::timerMachineStateCallback(const ros::TimerEvent& event) {
-
+void SubscribePublish::timerMachineStateCallback(const ros::TimerEvent& event) 
+{
 	edo_core_msgs::MachineState msg;
 	msg.current_state = manager.getMachineState();
 	msg.opcode = manager.getMachineOpcode();
 	MachineStateMsg(msg);
+}
+
+void SubscribePublish::unbrakeTimerCallback(const ros::TimerEvent& event)
+{
+	//collision timer callback: enables again the collision check that was disabled during the unbrake and recovery
+
+	collTimer.stop();
+	
+	manager.set_underVoltage_Timer_true();
 }

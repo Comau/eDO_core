@@ -9,7 +9,7 @@ import base64
 class SystemCmdNode():
     def __init__(self):
         rospy.init_node('system_cmd_node')
-        s = rospy.Service('system_command_srv', SystemCommand, self.handle_system_mdd_srv)
+        s = rospy.Service('system_command_srv', SystemCommandSrv, self.handle_system_mdd_srv)
         print "Ready"
         rospy.spin()
 
@@ -17,7 +17,7 @@ class SystemCmdNode():
         print req, req.command
         if req.command == 0:
             ts_ms = datetime.utcnow().strftime("%s") + '000' # non sono sicuro
-            return SystemCommandResponse('{}'.format(ts_ms))
+            return SystemCommandSrvResponse('{}'.format(ts_ms))
         elif req.command == 1:
             ip, net = req.data.split()
             ff = "#!/bin/bash\n\nsudo ifconfig eth0 {} netmask {}".format(ip, net)
@@ -25,13 +25,13 @@ class SystemCmdNode():
                 f.write(ff)
             os.system("chmod 755 /home/edo/configLAN")
             os.system("/home/edo/configLAN")
-            return SystemCommandResponse('')
+            return SystemCommandSrvResponse('')
         elif req.command == 2:
             f = os.popen('ifconfig eth0 | grep "inet\ addr" | cut -d: -f2 | cut -d" " -f1')
             ip=f.read().strip()
             f = os.popen('ifconfig eth0 | grep "inet\ addr" | cut -d: -f4 | cut -d" " -f1')
             net=f.read().strip()
-            return SystemCommandResponse('{} {}'.format(ip, net))
+            return SystemCommandSrvResponse('{} {}'.format(ip, net))
         elif req.command == 3:
             os.system("sudo kill -9 $(ps aux | grep 'create_ap -d -n -w2' | awk '{print $2}')")
             data = req.data.split()
@@ -46,9 +46,9 @@ class SystemCmdNode():
                     f.write(ff)
                 os.system("chmod 755 /home/edo/configWifi")
                 os.system("/home/edo/configWifi")
-                return SystemCommandResponse('')
+                return SystemCommandSrvResponse('')
             else:
-                return SystemCommandResponse('Error')
+                return SystemCommandSrvResponse('Error')
         elif req.command == 4:
             f = os.popen('ps aux | sed -n \'/.*[c]reate.*--no-virt wlan0 /{s///p;q}\'')
             data=f.read().strip().split()
@@ -56,8 +56,8 @@ class SystemCmdNode():
             psk = ''
             if len(data) == 2:
                 psk = base64.b64encode(data[1])
-            return SystemCommandResponse('{} {}'.format(ssid,psk))
-        return SystemCommandResponse('not implemented')
+            return SystemCommandSrvResponse('{} {}'.format(ssid,psk))
+        return SystemCommandSrvResponse('not implemented')
 
 
 if __name__ == '__main__':

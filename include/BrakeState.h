@@ -45,6 +45,7 @@ class BrakeState: public State {
 public:
 	static BrakeState* getInstance();
 	void getCurrentState();
+	State* HandleMove(const edo_core_msgs::MovementCommand& msg);
 	State* HandleReset(const edo_core_msgs::JointReset mask);
 	State* ackCommand();
 

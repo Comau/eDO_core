@@ -43,38 +43,39 @@
 
 class MoveCommandState: public State  {
 public:
-	static MoveCommandState* getInstance();
-	void getCurrentState();
-	State* HandleMove(const edo_core_msgs::MovementCommand& msg);
-	State* ExecuteNextMove(const edo_core_msgs::MovementCommand& msg);
-	State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
-	State* StartMove(State* state, const edo_core_msgs::MovementCommand& msg);
+  static MoveCommandState* getInstance();
+  void getCurrentState();
+  State* HandleMove(const edo_core_msgs::MovementCommand& msg);
+  void   ExecuteNextMove(const edo_core_msgs::MovementCommand& msg);
+  State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
+  State* StartMove(State* state, const edo_core_msgs::MovementCommand& msg);
+  State* StartAck(State* state, const edo_core_msgs::MovementFeedback& ack);
 
 private:
 
-	MoveCommandState();
-	MoveCommandState(MoveCommandState const&);
-	MoveCommandState& operator=(MoveCommandState const&);
-	void Init();
-	bool MessageIsValid(const edo_core_msgs::MovementCommand& msg);
-	bool InternalStateIsValid(uint8_t moveType);
-	void SendMovementAck(const MESSAGE_FEEDBACK& ackType, int8_t data);
+  MoveCommandState();
+  MoveCommandState(MoveCommandState const&);
+  MoveCommandState& operator=(MoveCommandState const&);
+  void Init();
+  bool MessageIsValid(const edo_core_msgs::MovementCommand& msg);
+  bool InternalStateIsValid(uint8_t moveType);
+  void SendMovementAck(const MESSAGE_FEEDBACK& ackType, int8_t data, int asi_line);
 
-	enum INTERNAL_STATE {
-		IDLE = 0,
-		PAUSE = 1,
-		CANCEL = 2,
-		RESUME = 3
-	};
+  enum INTERNAL_STATE {
+    IDLE   = 0,
+    PAUSE  = 1,
+    CANCEL = 2,
+    RESUME = 3
+  };
 
-	static MoveCommandState* instance;
-	State* previousState;
-	std::vector<edo_core_msgs::MovementCommand> moveMsgBuffer;
-	int bufferSize;
-	bool firstSent;
-	INTERNAL_STATE internalState;
-	unsigned long int counterMsgSent;
-	unsigned long int counterAckReceived;
+  static MoveCommandState* instance;
+  State* previousState;
+  std::vector<edo_core_msgs::MovementCommand> moveMsgBuffer;
+  int bufferSize;
+  bool firstSent;
+  INTERNAL_STATE internalState;
+  unsigned long int counterMsgSent;
+  unsigned long int counterAckReceived;
 };
 
 #endif /* EDO_CORE_PKG_MOVECOMMANDSTATE_H_ */

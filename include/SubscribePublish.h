@@ -50,6 +50,7 @@
 #include "edo_core_msgs/MachineState.h"
 #include "edo_core_msgs/NodeSwVersionArray.h"
 #include "edo_core_msgs/LoadConfigurationFile.h"
+#include "edo_core_msgs/CollisionFromAlgoToState.h"
 #include <std_msgs/UInt8.h>
 
 #include "StateManager.h"
@@ -61,7 +62,11 @@ private:
     ros::NodeHandle node_obj;
     ros::Timer machineStateTimer;
     void timerMachineStateCallback(const ros::TimerEvent& event);
-
+	
+	//unbrake and recovery timer: during the unbrake and the recovery don't check the collision (11 sec)
+	ros::Timer collTimer;
+	void unbrakeTimerCallback(const ros::TimerEvent& event);
+	
   	// -------------- TOPIC FROM/TO BRIDGE NODE --------------
 	// This is the topic where the bridge node publishes reset command
 	ros::Subscriber bridge_jnt_reset_subscriber;
@@ -88,7 +93,9 @@ private:
 	// This is the service where the node receives the number of joints presents in the system
   	ros::ServiceClient algo_jnt_number_client;
   	// This is the service where the node receives the movement feedback
-  	ros::Subscriber algo_move_ack_subscriber;
+  	ros::Subscriber algo_move_ack_subscriber;	
+	// Message from algo to state
+  	ros::Subscriber algo_collision_subscriber;
 	// This is the service where the node publishes the joints state
   	ros::Publisher machine_algo_jnt_state_publisher;
 	// This is the topic where the node publishes the movement commands
@@ -129,7 +136,7 @@ private:
 
 	int jointsNumber;
 	uint64_t maskedJoints;
-
+  uint32_t machineStateUpdate;
 public:
 
 	// Singleton getInstance

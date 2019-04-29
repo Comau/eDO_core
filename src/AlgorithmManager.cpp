@@ -46,6 +46,7 @@ using namespace CommonService;
 #define ENABLE_ROS_INFO  (1==1)
 #define ENABLE_ALGOMNGR_PRINTFS (1==1)
 #define ENABLE_MINIMAL_ALGOMNGR_PRINTFS (1==1)
+#define ENABLE_DYNAMIC_MODEL_PRINTFS (1==0)
 #else
 /**this sets verbosity level of ORL library**/
 #define LOCAL_VERBOSITY ORL_SILENT /**** ORL_VERBOSE or **ORL_SILENT**/
@@ -53,9 +54,9 @@ using namespace CommonService;
 #define ENABLE_ROS_INFO  (1==0)
 #define ENABLE_ALGOMNGR_PRINTFS (1==0)
 #define ENABLE_MINIMAL_ALGOMNGR_PRINTFS (1==0)
+#define ENABLE_DYNAMIC_MODEL_PRINTFS (1==0)
 #endif  
 
-#define DO_TERMINATE_AFTER_CANCEL (1==0)
 #define ENABLE_KINEMATICS_SERVICES (1==0)
 /**
  * Constructor of the manager class writes algorithm
@@ -82,13 +83,15 @@ algorithm_mode_(UNINITIALIZED)
 	ros::Subscriber jog_control_sub = node.subscribe("machine_jog", 100, &AlgorithmManager::jogCallback, this);
 	ros::Subscriber jnt_state_subscriber = node.subscribe("machine_algo_jnt_state", 100, &AlgorithmManager::stateCallback, this);
 	ros::Subscriber jnt_calib_subscriber = node.subscribe("machine_jnt_calib", 100, &AlgorithmManager::calibCallback, this);
-
+	
+	// publish topic
+	algo_collision_publisher = node.advertise<edo_core_msgs::CollisionFromAlgoToState>("algo_collision", 10);	
 	feedback_publisher_ = node.advertise<edo_core_msgs::MovementFeedback>("algo_movement_ack", 200);
 	cartesian_pose_pub_ = node.advertise<edo_core_msgs::CartesianPose>("cartesian_pose", 100);
 	algorithm_state_pub_ = node.advertise<std_msgs::Int8>("algorithm_state", 100);
 
 	//create a ROS Service Server
-	ros::ServiceServer get_jnts_number_srv = node.advertiseService("algo_jnt_number_srv", &AlgorithmManager::getJointsNumber, this);
+	ros::ServiceServer get_jnts_number_srv = node.advertiseService("algo_jnt_number_srv", &AlgorithmManager::getSrvJointsNumber, this);
 #if ENABLE_KINEMATICS_SERVICES
 	ros::ServiceServer get_direct_kinematics_srv = node.advertiseService("algo_direct_kinematics_srv", &AlgorithmManager::getDirectKinematics, this);
 	ros::ServiceServer get_inverse_kinematics_srv = node.advertiseService("algo_inverse_kinematics_srv", &AlgorithmManager::getInverseKinematics, this);
@@ -104,12 +107,20 @@ algorithm_mode_(UNINITIALIZED)
 	memset(&target_cart_, 0, sizeof(ORL_cartesian_position));
 	memset(&hold_position_, 0, sizeof(ORL_joint_value));
 	memset(&current_state_, 0, sizeof(ORL_joint_value));
+	memset(&hold_current_, 0, sizeof(ORL_Dynamic_Model));
+	memset(&sx_dyn_mod_, 0, sizeof(ORL_Dynamic_Model));
 	delay_ = 255;
 	waiting_ = false;
 	jog_state_ = false;
 	pending_cancel_ = false;
 	jog_carlin_state_ = false;
 	pause_state_ = false;
+	alarm_state_ = false;
+	alarm_exclusion_ = false;
+	alarm_state_ack_ = false;
+	moveInProgress_ = false;
+	moveStopped_ = false;
+
 	interpolation_data_.resize(3);
 	first_time_ = true;
 	pkg_path_ = ros::package::getPath("edo_core_pkg");
@@ -121,6 +132,8 @@ algorithm_mode_(UNINITIALIZED)
 	aggPosCartPose_ = 0;
 	control_mutex_ = PTHREAD_MUTEX_INITIALIZER;
 	noCartPose_ = true;
+	previousMoveFlyHandle_ = 0;
+	idleMoveHandle_ = 0;
 
 	private_nh.param<double>("controller_frequency", controller_frequency_, CONTROLLER_FREQUENCY);
 	private_nh.param<double>("state_saturation_threshold", state_saturation_threshold_, 0.5);
@@ -139,7 +152,8 @@ algorithm_mode_(UNINITIALIZED)
 
 	while (ros::ok())
 	{
-		if (algorithm_mode_ != SWITCHED_OFF){
+		if (algorithm_mode_ != SWITCHED_OFF)
+		{
 			//update the control command
 			updateControl();
 			//publish the last control commands
@@ -166,17 +180,17 @@ AlgorithmManager::~AlgorithmManager()
 #if ENABLE_ROS_INFO
 	ROS_INFO("Terminate controller...");
 #endif
-  if ((algorithm_mode_ != UNINITIALIZED) &&
-      (configurationFileLoaded_ == 1))
-  {
-	  ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-	  ORL_terminate_controller(LOCAL_VERBOSITY, ORL_CNTRL01);
-  }
+	if ((algorithm_mode_ != UNINITIALIZED) && (configurationFileLoaded_ == 1))
+	{
+		ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+		ORL_terminate_controller(LOCAL_VERBOSITY, ORL_CNTRL01);
+	}
 }
 
 void AlgorithmManager::setAlgorithmMode(AlgorithmManager::Mode si_mode, const char *apc_func, int si_line)
 {
-static const char *sam_AlgorithmMode[MAX_NUM_ALGORITHM_MODES] = {
+	static const char *sam_AlgorithmMode[MAX_NUM_ALGORITHM_MODES] = 
+	{
 		"UNINITIALIZED(0)",
 		"INITIALIZED(1)",
 		"MOVING(2)",
@@ -185,7 +199,8 @@ static const char *sam_AlgorithmMode[MAX_NUM_ALGORITHM_MODES] = {
 		"FINISHED(5)",
 		"PAUSE(6)",
 		"RECOVERY(7)",
-		"SWITCHED_OFF(8)"
+		"HOLD(8)",
+		"SWITCHED_OFF(9)"
 };
 #if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
   if (algorithm_mode_ != si_mode)
@@ -197,7 +212,7 @@ static const char *sam_AlgorithmMode[MAX_NUM_ALGORITHM_MODES] = {
 
 bool AlgorithmManager::initializeORL()
 {
-	int status = ORL_initialize_controller("robot.edo", (pkg_path_ + "/config/").c_str(), LOCAL_VERBOSITY, ORL_CNTRL01); //(pkg_path_ + "/config/").c_str()
+	int status = ORL_initialize_controller("robot.edo", (pkg_path_ + "/config/").c_str(), LOCAL_VERBOSITY, ORL_CNTRL01);
 	if(status < RET_OK)
 	{
 		ROS_ERROR("<ORL_initialize_controller> ORL error: %d", status);
@@ -216,7 +231,7 @@ bool AlgorithmManager::initializeORL()
 		return false;
 	}
 	{
-		ORL_System_Variable     orl_sys_var;
+		ORL_System_Variable orl_sys_var;
 		orl_sys_var.ctype = ORL_STRING;
 		ORL_get_SW_version(orl_sys_var.sysvar_name, LOCAL_VERBOSITY, ORL_CNTRL01); 
 		ROS_INFO("SOFTWARE VERSION <%s>",orl_sys_var.sysvar_name);
@@ -235,126 +250,149 @@ bool AlgorithmManager::initializeORL()
 bool AlgorithmManager::loadConfigurationFile_CB(edo_core_msgs::LoadConfigurationFile::Request  &req, edo_core_msgs::LoadConfigurationFile::Response &res){
   bool sb_sts = false;
 
-  // printf("[%s,%d] loadConfigurationFile_CB\n",__FILE__,__LINE__);
-  if ((algorithm_mode_ == UNINITIALIZED) &&
-      (configurationFileLoaded_ == 0)) // Configuration file already loaded?
-  { /* No */
-    sb_sts = AlgorithmManager::initializeORL();
-    if (sb_sts == false)
-    {
-      ROS_ERROR("Failure loading configuration file");
-      //printf("[%s,%d] ROS_ERROR Failure loading configuration file\n",__FILE__,__LINE__);
-    }
-    else 
-    {
-      configurationFileLoaded_ = 1;  // Configuration file loaded
+	// printf("[loadConfigurationFile_CB,%d]\n",__LINE__);
+	if ((algorithm_mode_ == UNINITIALIZED) && (configurationFileLoaded_ == 0)) // Configuration file already loaded?
+	{ /* No */
+		sb_sts = AlgorithmManager::initializeORL();
+		if (sb_sts == false)
+		{
+			ROS_ERROR("Failure loading configuration file");
+			//printf("[loadConfigurationFile_CB,%d] ROS_ERROR Failure loading configuration file\n",__LINE__);
+		}
+		else 
+		{	
+			configurationFileLoaded_ = 1;  // Configuration file loaded
 
-      edo_core_msgs::JointsNumber::Request reqgjn;
-      edo_core_msgs::JointsNumber::Response resgjn;
+			edo_core_msgs::JointsNumber::Request reqgjn;
+			edo_core_msgs::JointsNumber::Response resgjn;
 
-      joints_number_ = 0;
+			joints_number_ = 0;
 
-      if(!getJointsNumber(reqgjn, resgjn))
-      {
-        ROS_ERROR("Impossible to get joints number");
-      }
-      else
-      {
-        joints_number_   = resgjn.counter;
-        joints_mask_     = resgjn.joints_mask;
-        joints_aux_mask_ = resgjn.joints_aux_mask;
-#if ENABLE_ROS_INFO
-        ROS_INFO("ORL controller initialized...for %d axes",joints_number_);
-        ROS_INFO("ORL controller initialized...joint mask %d",joints_mask_);
-        ROS_INFO("ORL controller initialized...aux_mask   %d",joints_aux_mask_);
-#endif
-        get_Strk(strk_);
-      }
-      noCartPose_ = false;  // Enable the execution of the kinematics
-    }
-  }
+			if(!getSrvJointsNumber(reqgjn, resgjn))
+			{
+				ROS_ERROR("Impossible to get joints number");
+			}
+			else
+			{
+				joints_number_   = resgjn.counter;
+				joints_mask_     = resgjn.joints_mask;
+				joints_aux_mask_ = resgjn.joints_aux_mask;
+	#if ENABLE_ROS_INFO
+				ROS_INFO("ORL controller initialized...for %d axes",joints_number_);
+				ROS_INFO("ORL controller initialized...joint mask %d",joints_mask_);
+				ROS_INFO("ORL controller initialized...aux_mask   %d",joints_aux_mask_);
+	#endif
+				get_Strk(strk_);
+			}
+			noCartPose_ = false;  // Enable the execution of the kinematics
+		}	
+	}
 #if DEVELOPMENT_RELEASE
-  else
-  {
-    printf("[%s,%d] algorithm_mode_ %d configurationFileLoaded_ %d\n",__FILE__,__LINE__, algorithm_mode_, configurationFileLoaded_);
-  }
+	else
+	{
+		printf("[loadConfigurationFile_CB,%d] algorithm_mode_ %d configurationFileLoaded_ %d\n",__LINE__, algorithm_mode_, configurationFileLoaded_);
+	}
 #endif
-  res.result = sb_sts;
-  return(sb_sts);
+	res.result = sb_sts;
+	return(sb_sts);
 }
 
-bool AlgorithmManager::getJointsNumber(edo_core_msgs::JointsNumber::Request  &req, edo_core_msgs::JointsNumber::Response &res){
+bool AlgorithmManager::getSrvJointsNumber(edo_core_msgs::JointsNumber::Request  &req, edo_core_msgs::JointsNumber::Response &res){
 
-  // printf("[%s,%d] getJointsNumber\n",__FILE__,__LINE__);
-  if (configurationFileLoaded_ == 1)  // Configuration file loaded
-  {
-    ORL_System_Variable     orl_sys_var;
+	// printf("[getSrvJointsNumber, %d]\n",__LINE__);
+	if (configurationFileLoaded_ == 1)  // Configuration file loaded
+	{
+		ORL_System_Variable     orl_sys_var;
 
-    sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].RRS_TOL_CTIME", ORL_ARM1 + 1); 
-    orl_sys_var.ctype = ORL_INT; //  ORL_BOOL  ORL_REAL  ORL_STRING
-    orl_sys_var.iv = 0;
-    ORL_set_data   (orl_sys_var,      /* [IN]      Structure for the system variable */
+		// $ARM_DATA[1].RRS_TOL_CTIME := 0
+		memset(&orl_sys_var, 0, sizeof(ORL_System_Variable));
+		sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].RRS_TOL_CTIME", ORL_ARM1 + 1); 
+		orl_sys_var.ctype = ORL_INT; //  ORL_INT ORL_BOOL ORL_REAL ORL_STRING
+		orl_sys_var.iv = 0;
+		ORL_set_data   (orl_sys_var,      /* [IN]      Structure for the system variable */
         LOCAL_VERBOSITY , /* [IN]      Verbose ON/OFF */
         ORL_CNTRL01       /* [IN]      Controller Index */);
-    sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].RRS_TOL_FTIME", ORL_ARM1 + 1); 
-    orl_sys_var.ctype = ORL_INT; //  ORL_BOOL  ORL_REAL  ORL_STRING
-    orl_sys_var.iv = 0;
-    ORL_set_data   (orl_sys_var,      /* [IN]      Structure for the system variable */
+		
+		// $ARM_DATA[1].RRS_TOL_FTIME := 0
+		memset(&orl_sys_var, 0, sizeof(ORL_System_Variable));
+		sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].RRS_TOL_FTIME", ORL_ARM1 + 1); 
+		orl_sys_var.ctype = ORL_INT; //  ORL_INT ORL_BOOL ORL_REAL ORL_STRING
+		orl_sys_var.iv = 0;
+		ORL_set_data   (orl_sys_var,      /* [IN]      Structure for the system variable */
+        LOCAL_VERBOSITY , /* [IN]      Verbose ON/OFF */
+        ORL_CNTRL01       /* [IN]      Controller Index */);
+		
+		// $ARM_DATA[1].SING_CARE := TRUE
+		memset(&orl_sys_var, 0, sizeof(ORL_System_Variable));
+		sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].SING_CARE", ORL_ARM1 + 1); 
+		orl_sys_var.ctype = ORL_BOOL; //  ORL_INT ORL_BOOL ORL_REAL ORL_STRING
+		orl_sys_var.iv = ORL_TRUE;
+		ORL_set_data   (orl_sys_var,      /* [IN]      Structure for the system variable */
         LOCAL_VERBOSITY , /* [IN]      Verbose ON/OFF */
         ORL_CNTRL01       /* [IN]      Controller Index */);
                     
-    sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].AUX_MASK", ORL_ARM1 + 1);
-    orl_sys_var.ctype = ORL_INT; //  ORL_BOOL  ORL_REAL  ORL_STRING
-    int status_aux = ORL_get_data(&orl_sys_var, LOCAL_VERBOSITY, ORL_CNTRL01);
-    int aux_mask = orl_sys_var.iv & SSM_JOINTS_MASK;
-    if(!manageORLStatus(status_aux, "ORL_get_sys_var.$AUX_MASK"))
-    {
-      res.counter = -1;
-printf("[%s,%d] ORL_get_sys_var.$AUX_MASK failure\n",__FILE__,__LINE__);
-      return true;
-    }
-    sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].JNT_MASK", ORL_ARM1 + 1);
-    orl_sys_var.ctype = ORL_INT; //  ORL_BOOL  ORL_REAL  ORL_STRING
-    int status_jnt = ORL_get_data(&orl_sys_var, LOCAL_VERBOSITY, ORL_CNTRL01);
-    int jnt_mask = orl_sys_var.iv;
-    int jnt_num;
-    int jnt_mask_save;
-    if(!manageORLStatus(status_jnt, "ORL_get_sys_var.$JNT_MASK"))
-    {
-      res.counter = -1;
-printf("[%s,%d] ORL_get_sys_var.$JNT_MASK failure\n",__FILE__,__LINE__);
-      return true;
-    }
-    if (jnt_mask <= 0)
-    {
-      res.counter = -3;
-printf("[%s,%d] getJointsNumber\n",__FILE__,__LINE__);
-      return true;
-    }
-    jnt_mask &= SSM_JOINTS_MASK; // safety check
-    jnt_mask_save = jnt_mask;
-    for(jnt_num = 0; jnt_mask != 0; jnt_mask >>= 1)
-    {
-      if (jnt_mask & 1)
-        jnt_num++;
-    }
+		sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].AUX_MASK", ORL_ARM1 + 1);
+		orl_sys_var.ctype = ORL_INT; //  ORL_BOOL  ORL_REAL  ORL_STRING
+		int status_aux = ORL_get_data(&orl_sys_var, LOCAL_VERBOSITY, ORL_CNTRL01);
+		int aux_mask = orl_sys_var.iv & SSM_JOINTS_MASK;
+		if(!manageORLStatus(status_aux, "ORL_get_sys_var.$AUX_MASK"))
+		{
+			res.counter = -1;
+#if DEVELOPMENT_RELEASE
+			printf("[getSrvJointsNumber, %d] ORL_get_sys_var.$AUX_MASK failure\n",__LINE__);
+#endif
+			return true;
+		}
+		sprintf(orl_sys_var.sysvar_name, "$ARM_DATA[%d].JNT_MASK", ORL_ARM1 + 1);
+		orl_sys_var.ctype = ORL_INT; //  ORL_BOOL  ORL_REAL  ORL_STRING
+		int status_jnt = ORL_get_data(&orl_sys_var, LOCAL_VERBOSITY, ORL_CNTRL01);
+		int jnt_mask = orl_sys_var.iv;
+		int jnt_num;
+		int jnt_mask_save;
+		if(!manageORLStatus(status_jnt, "ORL_get_sys_var.$JNT_MASK"))
+		{
+			res.counter = -1;
+#if DEVELOPMENT_RELEASE
+			printf("[getSrvJointsNumber, %d] ORL_get_sys_var.$JNT_MASK failure\n",__LINE__);
+#endif
+			return true;
+		}
+		if (jnt_mask <= 0)
+		{
+			res.counter = -3;
+#if DEVELOPMENT_RELEASE
+			printf("[getSrvJointsNumber, %d] jnt_mask <= 0 \n",__LINE__);
+#endif
+			return true;
+		}
+		jnt_mask &= SSM_JOINTS_MASK; // safety check
+		jnt_mask_save = jnt_mask;
+		
+		for(jnt_num = 0; jnt_mask != 0; jnt_mask >>= 1)
+		{
+			if (jnt_mask & 1)
+				jnt_num++;
+		}
     
-    if (jnt_num > SSM_NUM_MAX_JOINTS)
-      jnt_num = SSM_NUM_MAX_JOINTS;
+		if (jnt_num > SSM_NUM_MAX_JOINTS)
+			jnt_num = SSM_NUM_MAX_JOINTS;
     
-    if ((jnt_num != 4) && (jnt_num != 6) && (jnt_num != 7))
-printf("[%s,%d] getJointsNumber Jnt_Mask:%d Aux_Mask:%d Axes:%d\n",__FILE__,__LINE__, jnt_mask_save, aux_mask, jnt_num);
+#if DEVELOPMENT_RELEASE
+		if ((jnt_num != 4) && (jnt_num != 6) && (jnt_num != 7))
+			printf("[getSrvJointsNumber, %d] Jnt_Mask:%d Aux_Mask:%d Axes:%d\n",__LINE__, jnt_mask_save, aux_mask, jnt_num);
+#endif
 
-    res.counter = jnt_num;
-    res.joints_mask = (unsigned long)jnt_mask_save;
-    res.joints_aux_mask = (unsigned long)aux_mask;
-    // printf("[%s,%d] getJointsNumber Jnt_Mask:%d Aux_Mask:%d Axes:%d\n",__FILE__,__LINE__, jnt_mask_save, aux_mask, jnt_num);
-  }
-  else
-  {
-    res.counter = -2;
-  }
-  return true;
+		res.counter = jnt_num;
+		res.joints_mask = (unsigned long)jnt_mask_save;
+		res.joints_aux_mask = (unsigned long)aux_mask;
+    // printf("[getSrvJointsNumber, %d] Jnt_Mask:%d Aux_Mask:%d Axes:%d\n",__LINE__, jnt_mask_save, aux_mask, jnt_num);
+	}
+	else
+	{
+		res.counter = -2;
+		// printf("[getSrvJointsNumber, %d] configuration not done!\n",__LINE__);
+	}
+	return true;
 }
 
 #if ENABLE_KINEMATICS_SERVICES
@@ -417,18 +455,22 @@ void AlgorithmManager::timerCallback(const ros::TimerEvent& event)
  */
 void AlgorithmManager::moveCallback(edo_core_msgs::MovementCommandConstPtr msg)
 {
-
+  int inLoop = 0;
+  
   if(algorithm_mode_!=UNINITIALIZED)
   {
-    feedbackFn(MESSAGE_FEEDBACK::COMMAND_RECEIVED, 0, __FUNCTION__, __LINE__);
+//    feedbackFn(MESSAGE_FEEDBACK::COMMAND_RECEIVED, 0, __FUNCTION__, __LINE__);
 
 #if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
-printf ("[moveCallback,%d] MOVE_MESSAGE_COMMAND = %c algorithm_mode_ %d\n",__LINE__,msg->move_command, algorithm_mode_);
+printf ("[moveCallback,%d] Rx MOVE_MESSAGE_COMMAND = %c algorithm_mode_ %d\n",__LINE__,msg->move_command, algorithm_mode_);
 #endif
 
 #if ENABLE_ROS_INFO
     ROS_INFO("MOVE_MESSAGE_COMMAND = %c command received...   sono nello stato %d", msg->move_command, algorithm_mode_);
 #endif
+
+#if 0    
+#############################################################################################################
     //gestisco il delay, settato al controllo precedente
     //se 255 passo oltre (no_delay), altrimenti aspetto
     if (pause_state_                                                 &&
@@ -437,30 +479,43 @@ printf ("[moveCallback,%d] MOVE_MESSAGE_COMMAND = %c algorithm_mode_ %d\n",__LIN
         (msg->move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE))
     {
       ROS_ERROR("Edo is in pause state! Please resume or cancel previous movement...");
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+printf ("[moveCallback,%d] Edo is in pause state! Please resume or cancel previous move...\n",__LINE__);
+#endif
       return;
     }
-    
-    ros::Rate loop_rate(controller_frequency_);
-    while(algorithm_mode_ == WAITING || waiting_ )
+#############################################################################################################
+#endif
+
+#if 0    
+#############################################################################################################
+    if ((msg->move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME) &&
+        (msg->move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL) &&
+        (msg->move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE))
     {
-      if (!ros::ok())
+      ros::Rate loop_rate(controller_frequency_);
+      while((algorithm_mode_ == WAITING) || waiting_ )
       {
-        return;
+        if (++inLoop > 5000) {
+          printf("[%s,%d] waiting in loop %d %d \n",__FUNCTION__,__LINE__,algorithm_mode_,waiting_);
+          inLoop = 0;
+        }
+        if (!ros::ok())
+        {
+          return;
+        }
+        loop_rate.sleep();
       }
-      loop_rate.sleep();
-    }
-    
-    //qui leggo il delay
-    if((msg->move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE)  && 
-       (msg->move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME) && 
-       (msg->move_command != E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL))
-    {
+      //qui leggo il delay
       delay_ = msg->delay;
       if (msg->delay != 255 && msg->delay != 0) 
       {
         waiting_ = true;
       }
     }
+#############################################################################################################
+#endif
+
 //PUSH IN CODA DEI MESSAGGI ARRIVATI, in testa vengono inseriti i messaggio più prioritari (PAUSE,RESUME,CANCEL) in coda i comandi di movimento
 //la coda viene svuotata dal loop che genera i target
 
@@ -498,10 +553,10 @@ void AlgorithmManager::jogCallback(edo_core_msgs::MovementCommandConstPtr msg){
 
 	if(algorithm_mode_!=UNINITIALIZED)
 	{
-		feedbackFn(MESSAGE_FEEDBACK::COMMAND_RECEIVED, 0, __FUNCTION__, __LINE__);
+//		feedbackFn(MESSAGE_FEEDBACK::COMMAND_RECEIVED, 0, __FUNCTION__, __LINE__);
 #if ENABLE_ROS_INFO
 		ROS_INFO("MOVE_MESSAGE_COMMAND = %c command received...", msg->move_command);
-#endif		
+#endif
 		switch (msg->move_command) 
 		{
 			case E_MOVE_COMMAND::E_MOVE_COMMAND_JOGMOVE:
@@ -520,7 +575,8 @@ void AlgorithmManager::jogCallback(edo_core_msgs::MovementCommandConstPtr msg){
 		}
 		
 	}
-	else{
+	else
+	{
 #if ENABLE_ROS_INFO
 		ROS_INFO("Request for movement arrive while module was uninitialized");
 #endif
@@ -539,74 +595,223 @@ void AlgorithmManager::jogCallback(edo_core_msgs::MovementCommandConstPtr msg){
 
 void AlgorithmManager::stateCallback(edo_core_msgs::JointStateArrayConstPtr msg)
 {
+	bool JointsInAllarm = false;
+	bool JointsInColl = false;
+	bool JointsCurrentCalibration = false;
+	unsigned long sm_JointsInBrakeState = 0;
+	unsigned long sm_JointsInOverCurrentState = 0;
+	ORL_joint_value current_state_local;
+	edo_core_msgs::CollisionFromAlgoToState coll_msg;
+	
 	if (msg->joints.size() != joints_number_) {
 		ROS_WARN_THROTTLE(10, "Unacceptable state, impossible to initialize ORL...");
 		return;
 	}
-#if ENABLE_ROS_WARN
-	//ROS_WARN("dati %d, %d, %d, %d", strk[0][0], strk[1][0], strk[0][1], strk[1][1]);
+	memset(&current_state_local, 0, sizeof(ORL_joint_value));
+
+	current_state_local.unit_type = ORL_POSITION_LINK_DEGREE;
+	
+#if 1
+	if(!JointsCurrentCalibration)
+	{
+		if(msg->joints.size() >= (SSM_NUM_MAX_JOINTS - 1))
+		{
+			if((msg->joints[5].commandFlag & (1 << COMMAND_FLAG::UNCALIBRATED)) == 0)
+			{
+				JointsCurrentCalibration = true;
+			}  
+		}
+	}
 #endif
-	current_state_.unit_type = ORL_POSITION_LINK_DEGREE;
+
 	for(size_t i = 0; i < msg->joints.size(); i++)
 	{
-		if (msg->joints[i].position <= (float)strk_[0][i]) {
-			if (fabs(msg->joints[i].position - (float)strk_[0][i]) <= state_saturation_threshold_) {
-				current_state_.value[i] = (float)strk_[0][i];
-				ROS_WARN_THROTTLE(2, "joint %d: position saturated N", i+1);
-			}
-			else
+    // If there are no errors, skip all the tests
+    if ((msg->joints[i].commandFlag & 0xF0) != 0) // COMMAND_FLAG::STATUS_ERROR_MASK) == 0)
+    {
+
+#if 1
+		  if((msg->joints[i].commandFlag & (1 << COMMAND_FLAG::COLLISION)) != 0)
+		  {
+			  JointsInAllarm = true; 
+		  }
+#endif
+#if 1
+		  if((msg->joints[i].commandFlag & (1 << COMMAND_FLAG::OVERCURRENT)) != 0)
+		  {
+			  JointsInAllarm = true;
+        sm_JointsInOverCurrentState |= (1 << i); 
+		  }
+#endif
+#if 1
+		  if((msg->joints[i].commandFlag & (1 << COMMAND_FLAG::H_BRIDGE_DOWN)) != 0)
+		  {
+			  JointsInAllarm = true;
+        sm_JointsInBrakeState |= (1 << i);
+		  }
+#endif
+		}
+#if 1
+	
+		if(JointsCurrentCalibration && algorithm_mode_ != UNINITIALIZED && i<6) // se minore di 6, pinza non ha collision detection
+		{
+			//printf("%f %f %d\n", msg->joints[i].current, joints_control_.joints[i].current, i);
+			if(collisionCheck( msg->joints[i].current, joints_control_.joints[i].current, i))
 			{
-				ROS_ERROR("Error, joint %d: stroke end N", i+1);
-				//algorithm_mode_ = BLOCKED;//INITIALIZED;
-				current_state_.value[i] = (float)strk_[0][i];
-				hold_position_.value[i] = current_state_.value[i];
-				//memcpy(&hold_position_, &current_state_, sizeof(ORL_joint_value));
+			JointsInColl = true;
+			JointsInAllarm = true;                                                                      
+			sm_JointsInBrakeState |= (1 << i);
 			}
 		}
-		else if (msg->joints[i].position >= (float)strk_[1][i]) {
-			if (fabs(msg->joints[i].position - (float)strk_[1][i]) <= state_saturation_threshold_) {
-				current_state_.value[i] = (float)strk_[1][i];
-				ROS_WARN_THROTTLE(2, "joint %d: position saturated P", i+1);
+#endif
+
+		
+		current_state_local.value[i] = msg->joints[i].position;
+	}
+  
+	// Send collision message to State Machine
+	coll_msg.coll_flag = JointsInColl;
+	algo_collision_publisher.publish(coll_msg);
+			
+	// Update the current state of the jnt position only if there are no errors
+	if ((sm_JointsInOverCurrentState == 0) && (sm_JointsInBrakeState == 0))
+	{
+		memcpy(&current_state_, &current_state_local, sizeof(ORL_joint_value));
+	}    
+
+	if (algorithm_mode_ == UNINITIALIZED)
+	{ 
+		// Configuration file already loaded?
+		if (configurationFileLoaded_ == 1)
+		{ 
+			// Yes, do the initialization
+			// The very first time, when the robot is switched on, the status is 'brake' since the beginnig.
+			// so the current position of the robot is not set.
+			// Here we force the setting, just before the first 'unbrake' of the system
+			memcpy(&current_state_, &current_state_local, sizeof(ORL_joint_value));
+			initialize(msg);
+		}
+	}
+	else if (algorithm_mode_ != SWITCHED_OFF)
+	{
+		if (++aggPosCartPose_ >= 10)
+		{
+			// every ~100ms compute the cartesian position
+			if (alarm_state_ == false)
+			{
+				cartesian_pose_pub_.publish(computeCartesianPose(&current_state_));
+				aggPosCartPose_ = 0;
 			}
 			else
 			{
-				ROS_ERROR("Error, joint %d: stroke end P", i+1);
-				//algorithm_mode_ = BLOCKED;//INITIALIZED;
-				current_state_.value[i] = (float)strk_[1][i];
-				hold_position_.value[i] = current_state_.value[i];
-				//memcpy(&hold_position_, &current_state_, sizeof(ORL_joint_value));
+				--aggPosCartPose_;  // As soon as there is no more the alarm, redo the direct kinematics.
+			}        
+		}
+		
+		if (JointsInAllarm == true)
+		{
+			if (alarm_state_ == false)
+			{
+				if (moveInProgress_ == true)
+				{
+					(void)ORL_stop_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+	#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+					printf("[stateCallback,%d] ORL_stop_motion\n",__LINE__);
+	#endif  
+				}
+				alarm_state_ = true;
 			}
 		}
 		else
 		{
-			current_state_.value[i] = msg->joints[i].position;
+			if ((moveInProgress_ == false) || (alarm_state_ack_ == true))
+			{
+				alarm_state_ = false;
+				alarm_state_ack_ = false;
+			}
 		}
 	}
-  if ((algorithm_mode_ == UNINITIALIZED) &&
-      (configurationFileLoaded_ == 1) // Configuration file already loaded? Yes
-	   )
-		initialize(msg);
-       
-  if (algorithm_mode_ != UNINITIALIZED)
-  {
-    if (++aggPosCartPose_ >= 10)
-    {
-    	  // every ~100ms compute the cartesian position
-	  	  cartesian_pose_pub_.publish(computeCartesianPose(&current_state_));
-	  	  aggPosCartPose_ = 0;
-    }
-  }
+	return;
 }
 
 static void frame_dump(const char *name, int line, ORL_cartesian_position cp);
 static void frame_dump(const char *name, int line, ORL_cartesian_position cp)
 {
-#if ENABLE_ROS_INFO
-  ROS_INFO("[%s,%d] ", name, line, cp.x);
-  ROS_INFO("[%s,%d] ", name, line, cp.y);
-  ROS_INFO("[%s,%d] ", name, line, cp.z);
+#if 0 // ENABLE_ROS_INFO
+	ROS_INFO("[%s,%d] ", name, line, cp.x);
+	ROS_INFO("[%s,%d] ", name, line, cp.y);
+	ROS_INFO("[%s,%d] ", name, line, cp.z);
 #endif
-  return;
+	return;
+}
+
+/**
+ * 
+ */
+
+bool AlgorithmManager::setReferenceFn(edo_core_msgs::MovementCommand * msg)
+{
+  int status = 0;
+
+  {
+    
+    ORL_cartesian_position tool_local;
+    ORL_cartesian_position uframe_local;
+    
+    memset(&tool_local, 0, sizeof(ORL_cartesian_position));
+    tool_local.unit_type = ORL_CART_POSITION;
+    tool_local.x = msg->tool.x;
+    tool_local.y = msg->tool.y;
+    tool_local.z = msg->tool.z;
+    tool_local.a = msg->tool.a; 
+    //tool_local.a = 0; // Just for test see below
+    tool_local.e = msg->tool.e;
+    tool_local.r = msg->tool.r;
+    frame_dump("TOOL", __LINE__, tool_local);
+    uframe_local.unit_type = ORL_CART_POSITION;
+    uframe_local.x = msg->frame.x;
+    uframe_local.y = msg->frame.y;
+    uframe_local.z = msg->frame.z;
+    uframe_local.a = msg->frame.a;
+    uframe_local.e = msg->frame.e;
+    uframe_local.r = msg->frame.r;
+    frame_dump("UFRAME", __LINE__, uframe_local);
+    /*                             $BASE     $TOOL       $UFRAME        */
+    
+    status = ORL_initialize_frames (base_, tool_local, uframe_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    
+    if(!manageORLStatus(status,"ORL_initialize_frames"))
+    {
+      return false;
+    }
+  }
+  
+#if 0  
+  {
+    ORL_payload_value  payload_data;  
+
+    memset(&payload_data, 0, sizeof(ORL_payload_value));
+    
+    payload_data.tool_mass = msg->tool.a; // Just for test see above
+    payload_data.tool_cntr_x = 0;
+    payload_data.tool_cntr_y = 0;
+    payload_data.tool_cntr_z = 0;
+    payload_data.tool_inertia_xx = 0;
+    payload_data.tool_inertia_yy = 0;
+    payload_data.tool_inertia_zz = 0;
+    payload_data.tool_inertia_xy = 0;
+    payload_data.tool_inertia_xz = 0;
+    payload_data.tool_inertia_yz = 0;
+
+	status = ORL_initialize_payload (payload_data, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    
+    if(!manageORLStatus(status,"ORL_initialize_payload"))
+    {
+      return false;
+    }
+  }
+#endif
+    return true;
 }
 
 /**
@@ -720,9 +925,10 @@ bool AlgorithmManager::moveTrjntFn(edo_core_msgs::MovementCommand * msg)
     target_cart_.e = msg->target.cartesian_data.e;
     target_cart_.r = msg->target.cartesian_data.r;
 
-    if (msg->target.cartesian_data.config_flags.length() > 0) {
-      strncpy(target_cart_.config_flags, msg->target.cartesian_data.config_flags.c_str(), SSM_CONFIG_FLAG_STRLEN_MAX);
-    }
+		if (msg->target.cartesian_data.config_flags.length() > 0) 
+		{
+			strncpy(target_cart_.config_flags, msg->target.cartesian_data.config_flags.c_str(), SSM_CONFIG_FLAG_STRLEN_MAX);
+		}
 #if ENABLE_ROS_INFO
     ROS_INFO("Received Cartesian x: %f, y: %f, z: %f, a: %f, e: %f, r: %f",target_cart_.x, target_cart_.y, target_cart_.z, target_cart_.a, target_cart_.e, target_cart_.r);
     ROS_INFO("tags: <%s>", target_cart_.config_flags);
@@ -739,36 +945,23 @@ bool AlgorithmManager::moveTrjntFn(edo_core_msgs::MovementCommand * msg)
     {
       return false;
     }
+    int status_dyn;
+    ORL_Dynamic_Model sx_dyn_mod_fake;
+    
+    for(size_t i = 0; i < NR_GET_NEXT_STEP_CALLS ; i++)
+	  {
+      status_dyn = ORL_get_dynamic_model(NULL, NULL, NULL, &sx_dyn_mod_fake, 1, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    }
+    
     first_time_ = false;
   }
 
   {
-    ORL_cartesian_position tool_local;
-    ORL_cartesian_position uframe_local;
-    
-    memset(&tool_local, 0, sizeof(ORL_cartesian_position));
-    tool_local.unit_type = ORL_CART_POSITION;
-    tool_local.x = msg->tool.x;
-    tool_local.y = msg->tool.y;
-    tool_local.z = msg->tool.z;
-    tool_local.a = msg->tool.a;
-    tool_local.e = msg->tool.e;
-    tool_local.r = msg->tool.r;
-    frame_dump("TOOL", __LINE__, tool_local);
-    uframe_local.unit_type = ORL_CART_POSITION;
-    uframe_local.x = msg->frame.x;
-    uframe_local.y = msg->frame.y;
-    uframe_local.z = msg->frame.z;
-    uframe_local.a = msg->frame.a;
-    uframe_local.e = msg->frame.e;
-    uframe_local.r = msg->frame.r;
-    frame_dump("UFRAME", __LINE__, uframe_local);
-    /*                             $BASE     $TOOL       $UFRAME                                          */
-    status = ORL_initialize_frames (base_, tool_local, uframe_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-    if(!manageORLStatus(status,"ORL_initialize_frames"))
+    if(!setReferenceFn(msg))
     {
       return false;
     }
+	
   }
   
   {
@@ -776,7 +969,7 @@ bool AlgorithmManager::moveTrjntFn(edo_core_msgs::MovementCommand * msg)
     move_parameters.resize(3);
     
     int status = 0;
-    if (delay_ == 255) 
+    if (msg->delay == 255) 
     {
       move_parameters[0] = ORL_FLY;
       move_parameters[1] = ORL_ADVANCE;
@@ -793,6 +986,10 @@ bool AlgorithmManager::moveTrjntFn(edo_core_msgs::MovementCommand * msg)
     {
       return false;
     }
+    MoveCommandMsgListInOrl_.push_back(*msg);  // Now ORL has this Move Command
+#if ENABLE_ALGOMNGR_PRINTFS
+    printf("[moveTrjntFn,%d] ORL Steps %d MCLS %d Fly %s Ax1:%f\n",__LINE__, numberSteps_, MoveCommandMsgListInOrl_.size(),(move_parameters[0] == ORL_FLY) ? "Yes" : "No", msg->target.joints_data[0]);
+#endif
   }
 
   setAlgorithmMode(MOVING, __FUNCTION__,__LINE__);
@@ -930,33 +1127,20 @@ bool AlgorithmManager::moveCarlinFn(edo_core_msgs::MovementCommand * msg)
     {
       return false;
     }
+    int status_dyn;
+    ORL_Dynamic_Model sx_dyn_mod_fake;
+    
+    for(size_t i = 0; i < NR_GET_NEXT_STEP_CALLS ; i++)
+	  {
+      status_dyn = ORL_get_dynamic_model(NULL, NULL, NULL, &sx_dyn_mod_fake, 1, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    }
+    
     first_time_ = false;
   }
   
   {
-    ORL_cartesian_position tool_local;
-    ORL_cartesian_position uframe_local;
-    
-    memset(&tool_local, 0, sizeof(ORL_cartesian_position));
-    tool_local.unit_type = ORL_CART_POSITION;
-    tool_local.x = msg->tool.x;
-    tool_local.y = msg->tool.y;
-    tool_local.z = msg->tool.z;
-    tool_local.a = msg->tool.a;
-    tool_local.e = msg->tool.e;
-    tool_local.r = msg->tool.r;
-    frame_dump("TOOL", __LINE__, tool_local);
-    uframe_local.unit_type = ORL_CART_POSITION;
-    uframe_local.x = msg->frame.x;
-    uframe_local.y = msg->frame.y;
-    uframe_local.z = msg->frame.z;
-    uframe_local.a = msg->frame.a;
-    uframe_local.e = msg->frame.e;
-    uframe_local.r = msg->frame.r;
-    frame_dump("FRAME", __LINE__, uframe_local);
-    /*                             $BASE     $TOOL       $UFRAME                                          */
-    status = ORL_initialize_frames (base_, tool_local, uframe_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-    if(!manageORLStatus(status,"ORL_initialize_frames"))
+
+    if(!setReferenceFn(msg))
     {
       return false;
     }
@@ -966,7 +1150,7 @@ bool AlgorithmManager::moveCarlinFn(edo_core_msgs::MovementCommand * msg)
     std::vector<int> move_parameters;
     move_parameters.resize(3);
     
-    if (delay_ == 255) {
+    if (msg->delay == 255) {
       move_parameters[0] = ORL_FLY;
       move_parameters[1] = ORL_ADVANCE;
     }
@@ -982,6 +1166,10 @@ bool AlgorithmManager::moveCarlinFn(edo_core_msgs::MovementCommand * msg)
     {
       return false;
     }
+    MoveCommandMsgListInOrl_.push_back(*msg);  // Now ORL has this Move Command
+#if ENABLE_ALGOMNGR_PRINTFS
+    printf("[moveCarlinFn,%d] ORL Move Command List Size %d\n",__LINE__,MoveCommandMsgListInOrl_.size());
+#endif
   }
   
   setAlgorithmMode(MOVING, __FUNCTION__,__LINE__);
@@ -1195,31 +1383,19 @@ bool AlgorithmManager::moveCarcirFn(edo_core_msgs::MovementCommand * msg)
     {
       return false;
     }
+    int status_dyn;
+    ORL_Dynamic_Model sx_dyn_mod_fake;
+    
+    for(size_t i = 0; i < NR_GET_NEXT_STEP_CALLS ; i++)
+	  {
+      status_dyn = ORL_get_dynamic_model(NULL, NULL, NULL, &sx_dyn_mod_fake, 1, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    }
     first_time_ = false;
   }
   
   {
-    ORL_cartesian_position tool_local;
-    ORL_cartesian_position uframe_local;
-    
-    memset(&tool_local, 0, sizeof(ORL_cartesian_position));
-    tool_local.unit_type = ORL_CART_POSITION;
-    tool_local.x = msg->tool.x;
-    tool_local.y = msg->tool.y;
-    tool_local.z = msg->tool.z;
-    tool_local.a = msg->tool.a;
-    tool_local.e = msg->tool.e;
-    tool_local.r = msg->tool.r;
-    uframe_local.unit_type = ORL_CART_POSITION;
-    uframe_local.x = msg->frame.x;
-    uframe_local.y = msg->frame.y;
-    uframe_local.z = msg->frame.z;
-    uframe_local.a = msg->frame.a;
-    uframe_local.e = msg->frame.e;
-    uframe_local.r = msg->frame.r;
-    /*                             $BASE     $TOOL       $UFRAME                                          */
-    status = ORL_initialize_frames (base_, tool_local, uframe_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-    if(!manageORLStatus(status,"ORL_initialize_frames"))
+
+    if(!setReferenceFn(msg))
     {
       return false;
     }
@@ -1229,7 +1405,7 @@ bool AlgorithmManager::moveCarcirFn(edo_core_msgs::MovementCommand * msg)
     std::vector<int> move_parameters;
     
     move_parameters.resize(3);
-    if (delay_ == 255) {
+    if (msg->delay == 255) {
       move_parameters[0] = ORL_FLY;
       move_parameters[1] = ORL_ADVANCE;
     }
@@ -1251,6 +1427,10 @@ bool AlgorithmManager::moveCarcirFn(edo_core_msgs::MovementCommand * msg)
     {
       return false;
     }
+    MoveCommandMsgListInOrl_.push_back(*msg);  // Now ORL has this Move Command
+#if ENABLE_ALGOMNGR_PRINTFS
+    printf("[moveCarcirFn,%d] ORL Move Command List Size %d\n",__LINE__,MoveCommandMsgListInOrl_.size());
+#endif
   }
   
   setAlgorithmMode(MOVING, __FUNCTION__,__LINE__);
@@ -1270,7 +1450,7 @@ bool AlgorithmManager::jogTrjntFn(edo_core_msgs::MovementCommand *  msg)
   ROS_INFO("[%d] Move_command:%c move_type:%c", __LINE__, msg->move_command, msg->move_type);
   ROS_INFO("[%d] Target.data_type:%c", __LINE__, msg->target.data_type);
 #endif
-
+  
   if (msg->target.data_type != E_MOVE_DEST_POINT::E_MOVE_POINT_JOINT)
   {
     return false;
@@ -1279,7 +1459,10 @@ bool AlgorithmManager::jogTrjntFn(edo_core_msgs::MovementCommand *  msg)
   current_state_local.unit_type = ORL_POSITION_LINK_DEGREE;
   for(size_t i = 0; i < ORL_MAX_AXIS; i++)
   {
-    current_state_local.value[i]=std::max(strk_[0][i]+0.1, std::min(strk_[1][i]-0.1, current_state_.value[i]));
+    if(i == N_AX_GRIPPER)
+      current_state_local.value[i]=std::max(strk_[IDX_STRK_ENP_N][i] + 0.2, std::min(strk_[IDX_STRK_ENP_P][i]-0.2, current_state_.value[i]));
+    else
+      current_state_local.value[i]=std::max(strk_[IDX_STRK_ENP_N][i] + 0.1, std::min(strk_[IDX_STRK_ENP_P][i]-0.1, current_state_.value[i]));
   }
   
   memcpy(&target_joint_, &current_state_local, sizeof(ORL_joint_value));
@@ -1287,7 +1470,7 @@ bool AlgorithmManager::jogTrjntFn(edo_core_msgs::MovementCommand *  msg)
   {
     unsigned int sj_lastJointAxis;
     unsigned long sm_joints_mask;
-    target_joint_.unit_type = ORL_POSITION_LINK_DEGREE;
+
 #if ENABLE_ROS_WARN
     ROS_WARN("Joints Mask %lld", msg->target.joints_mask);
 #endif
@@ -1306,7 +1489,10 @@ printf("[%s,%d] Mask %d LastJointAxis %d\n",__FILE__,__LINE__,sm_joints_mask,sj_
         if(fabs(msg->target.joints_data[i]) > 0.01)
         {
           minimum=std::min(fabs(msg->target.joints_data[i]),minimum);
-          target_joint_.value[i] = (msg->target.joints_data[i] < 0) ? strk_[0][i] + 0.1 : strk_[1][i] - 0.1;
+          if(i == N_AX_GRIPPER)
+            target_joint_.value[i] = (msg->target.joints_data[i] < 0) ? strk_[IDX_STRK_ENP_N][i] + 0.2 : strk_[IDX_STRK_ENP_P][i] - 0.2;
+          else
+            target_joint_.value[i] = (msg->target.joints_data[i] < 0) ? strk_[IDX_STRK_ENP_N][i] + 0.1 : strk_[IDX_STRK_ENP_P][i] - 0.1;
 // printf("[%s,%d] Joint %d has a delta %f\n",__FILE__,__LINE__,i,target_joint_.value[i]);
         }
 #if ENABLE_ROS_INFO
@@ -1320,35 +1506,18 @@ printf("[%s,%d] Mask %d LastJointAxis %d\n",__FILE__,__LINE__,sm_joints_mask,sj_
     }
   }
 
-  status = ORL_set_position(NULL, &current_state_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-  if(!manageORLStatus(status,"ORL_set_position"))
+  if (algorithm_mode_ != MOVING)
   {
-    return false;
+    status = ORL_set_position(NULL, &current_state_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    if(!manageORLStatus(status,"ORL_set_position"))
+    {
+      return false;
+    }
   }
   
   {
-    ORL_cartesian_position tool_local;
-    ORL_cartesian_position uframe_local;
-    
-    memset(&tool_local, 0, sizeof(ORL_cartesian_position));
-    tool_local.unit_type = ORL_CART_POSITION;
-    tool_local.x = msg->tool.x;
-    tool_local.y = msg->tool.y;
-    tool_local.z = msg->tool.z;
-    tool_local.a = msg->tool.a;
-    tool_local.e = msg->tool.e;
-    tool_local.r = msg->tool.r;
-    memset(&uframe_local, 0, sizeof(ORL_cartesian_position));
-    uframe_local.unit_type = ORL_CART_POSITION;
-    uframe_local.x = msg->frame.x;
-    uframe_local.y = msg->frame.y;
-    uframe_local.z = msg->frame.z;
-    uframe_local.a = msg->frame.a;
-    uframe_local.e = msg->frame.e;
-    uframe_local.r = msg->frame.r;
-    /*                             $BASE     $TOOL       $UFRAME                                          */
-    status = ORL_initialize_frames (base_, tool_local, uframe_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-    if(!manageORLStatus(status,"ORL_initialize_frames"))
+
+    if(!setReferenceFn(msg))
     {
       return false;
     }
@@ -1383,9 +1552,9 @@ printf("[jogTrjntFn,%d] jog_state TRUE algorithm_mode_ %d\n",__LINE__, algorithm
 bool AlgorithmManager::movePauseFn(edo_core_msgs::MovementCommand * msg)
 {
 #if ENABLE_ALGOMNGR_PRINTFS
-printf ("[movePauseFn,%d] B PAUSE Move algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
+printf ("[movePauseFn,%d] B PAUSE Move algorithm_mode_ %d alarm %d\n",__LINE__,algorithm_mode_,alarm_state_);
 #endif
-  if(algorithm_mode_ == MOVING)
+  if(moveInProgress_)
   {
 #if ENABLE_ALGOMNGR_PRINTFS
 printf ("[movePauseFn,%d] ORL_stop_motion algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
@@ -1399,16 +1568,26 @@ printf ("[movePauseFn,%d] ORL_stop_motion algorithm_mode_ %d\n",__LINE__,algorit
     ROS_WARN("stop requested, enter in pause");
 #endif
     pause_state_ = true;
+    // The ack to the command will be sent when the MOVE stopped
+  }
+  else if(algorithm_mode_ == WAITING)
+  {
+    // Request to PAUSE while waiting for the delay expiration
+    waiting_ = false;
+
+    setAlgorithmMode(PAUSE, __FUNCTION__,__LINE__);
+    feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 13, __FUNCTION__, __LINE__);	// This is for the MOVE waiting
+    feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 40, __FUNCTION__, __LINE__);	// This is for the end of the PAUSE command 
   }
   else
   {
     setAlgorithmMode(PAUSE, __FUNCTION__,__LINE__);
+    feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 40, __FUNCTION__, __LINE__);	// This is for the end of the PAUSE command
   }
   
 #if ENABLE_ALGOMNGR_PRINTFS
 printf ("[movePauseFn,%d] E PAUSE Move algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
 #endif
-  feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 0, __FUNCTION__, __LINE__);	
   return true;
 }
 
@@ -1416,81 +1595,60 @@ bool AlgorithmManager::moveResumeFn(edo_core_msgs::MovementCommand * msg)
 {  
   int status;
 #if ENABLE_ALGOMNGR_PRINTFS
-printf ("[%s,%d] B RESUME Move algorithm_mode_ %d\n",__FILE__,__LINE__,algorithm_mode_);
+printf ("[%s,%d] B RESUME Move algorithm_mode_ %d Alarm %d Stopped %d\n",__FILE__,__LINE__,algorithm_mode_,alarm_state_,moveStopped_);
 #endif
-  if (algorithm_mode_ == PAUSE)
+  /*
+  * Do not accept incoming requests of resume motion is ORL has not set the Initial position 
+  */
+  if ((alarm_state_ == true) || (first_time_ == true)) {
+    feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 0, __FUNCTION__, __LINE__);
+  }
+  else if (algorithm_mode_ == PAUSE)
   {
-    //int status = ORL_resume_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    if (moveStopped_)
+    {
+      feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 50, __FUNCTION__, __LINE__);  // Reply to the RESUME request
 #if ENABLE_ROS_WARN
     ROS_WARN("enter moveResumeFn");
 #endif
-    setAlgorithmMode(RECOVERY, __FUNCTION__,__LINE__);
+      setAlgorithmMode(RECOVERY, __FUNCTION__,__LINE__);
 #if ENABLE_ALGOMNGR_PRINTFS
-printf ("[moveResumeFn,%d] ORL_cancel_motion algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
+printf ("[moveResumeFn,%d] ORL_resume_motion algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
 #endif
-    status = ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-#if DO_TERMINATE_AFTER_CANCEL
-#if ENABLE_ROS_WARN
-		ROS_WARN("Terminate and re-initialize ORL...");
-#endif
+      status = ORL_resume_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
 
-    pthread_mutex_lock(&control_mutex_);
-    
-    status = ORL_terminate_controller(LOCAL_VERBOSITY, ORL_CNTRL01);
-    if (!initializeORL())
+      pause_state_ = false;
+      setAlgorithmMode(MOVING, __FUNCTION__,__LINE__);
+    }
+    else if (!MoveCommandMsgListInOrl_.empty())
     {
-      ROS_ERROR("Impossible to Inizialize ORL");
+      feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 50, __FUNCTION__, __LINE__);
+#if ENABLE_ROS_WARN
+    ROS_WARN("enter moveResumeFn");
+#endif
+      setAlgorithmMode(RECOVERY, __FUNCTION__,__LINE__);
 #if ENABLE_ALGOMNGR_PRINTFS
-printf ("[moveResumeFn,%d] Failure initializeORL\n",__LINE__);
+printf ("[moveResumeFn,%d] ORL_resume_motion algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
 #endif
-      return false;
-    }
-    
-    pthread_mutex_unlock(&control_mutex_);
-    
-    hold_position_.unit_type = ORL_POSITION_LINK_DEGREE; //TODO aggio il problema ma chi cancella il tipo, in caso di jog cartesiano?
-    status = ORL_set_position(NULL, &hold_position_, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-    if(!manageORLStatus(status,"ORL_set_position"))
+      status = ORL_resume_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+
+      pause_state_ = false;
+      setAlgorithmMode(MOVING, __FUNCTION__,__LINE__);
+    }      
+    else
     {
-      return false;
+      feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 50, __FUNCTION__, __LINE__);
+      setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+		  pause_state_ = false;
     }
-#endif
-    
-    if (in_progress_moveCommand_.move_type == E_MOVE_TYPE::E_MOVE_TYPE_JOINT)
-    {
-      // MOVE JOINT  TO <xxxx>
-      if(!moveTrjntFn(&in_progress_moveCommand_))
-      {
-        ROS_ERROR("Move Joint not executed...");
-        feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
-      }
-    }
-    else if (in_progress_moveCommand_.move_type == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR)
-    { 
-      // MOVE LINEAR TO <xxxx>
-      if(!moveCarlinFn(&in_progress_moveCommand_))
-      {
-        ROS_ERROR("Move Linear not executed...");
-        feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
-      }
-    }
-    else if (in_progress_moveCommand_.move_type == E_MOVE_TYPE::E_MOVE_TYPE_CIRCULAR)
-    {
-      // MOVE CIRCULAR TO <xxxx>
-      if(!moveCarcirFn(&in_progress_moveCommand_))
-      {
-        ROS_ERROR("Move Circular not executed...");
-        feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
-      }
-    }
-    // TODO all the other combination with XTND_POSITION
-    pause_state_ = false;
-    setAlgorithmMode(MOVING, __FUNCTION__,__LINE__);
   }
+  else
+  {
+    feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 50, __FUNCTION__, __LINE__);
+  }  
 #if ENABLE_ALGOMNGR_PRINTFS
 printf ("[moveResumeFn,%d] E RESUME Move algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
-#endif  
-  feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 0, __FUNCTION__, __LINE__);
+#endif
   return true;
 }
 
@@ -1508,38 +1666,25 @@ printf ("[moveCancelFn,%d] B CANCEL Move algorithm_mode_ %d\n",__LINE__,algorith
 printf ("[moveCancelFn,%d] ORL_cancel_motion algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
 #endif
 		status = ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-#if DO_TERMINATE_AFTER_CANCEL
-#if ENABLE_ALGOMNGR_PRINTFS
-printf ("[moveCancelFn,%d] ORL_terminate_controller\n",__LINE__);
-#endif
-#if ENABLE_ROS_WARN
-		ROS_WARN("Terminate and re-initialize ORL...");
-#endif
-
-		pthread_mutex_lock(&control_mutex_);
-		
-		status = ORL_terminate_controller(LOCAL_VERBOSITY, ORL_CNTRL01);
-		if (!initializeORL())
-		{
-			ROS_ERROR("Impossible to Inizialize ORL");
-printf ("[moveCancelFn,%d] Failure initializeORL\n",__LINE__);
-		}
-		
-		pthread_mutex_unlock(&control_mutex_);
-		
-		hold_position_.unit_type = ORL_POSITION_LINK_DEGREE; //TODO aggio il problema ma chi cancella il tipo, in caso di jog cartesiano?
-		status = ORL_set_position(NULL, &hold_position_, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-#endif
 		setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__); //finished????
 		pause_state_ = false;
 		pending_cancel_ = false;
 		waiting_ = false;
+    feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 60, __FUNCTION__, __LINE__);
+    while (!MoveCommandMsgListInOrl_.empty())
+    {
+      MoveCommandMsgListInOrl_.pop_front();
+      // For each Move Command popped from ORL give a feedback to machine_state/bridge
+      feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 20, __FUNCTION__, __LINE__); 
+    }
 	}
 	else if (algorithm_mode_ == WAITING)
 	{
 		// Request to CANCEL while waiting for the delay expiration
 		setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
 		delay_ = 255;
+		waiting_ = false;
+    feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 60, __FUNCTION__, __LINE__);
 	}
 	else
 	{
@@ -1550,8 +1695,7 @@ printf ("[moveCancelFn,%d] Failure initializeORL\n",__LINE__);
 #if ENABLE_ALGOMNGR_PRINTFS
 printf ("[moveCancelFn,%d] E Cancel Move algorithm_mode_ %d\n",__LINE__,algorithm_mode_);
 #endif
-	feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 0, __FUNCTION__, __LINE__);
-	return true;
+ 	return true;
 }
 
 //funzione di jog in spazio cartesiano
@@ -1580,7 +1724,10 @@ bool AlgorithmManager::jogCarlinFn(edo_core_msgs::MovementCommand *  msg)
   current_state_local.unit_type = ORL_POSITION_LINK_DEGREE;
   for(size_t i = 0; i < ORL_MAX_AXIS; i++)
   {
-    current_state_local.value[i] = std::max(strk_[0][i]+0.1, std::min(strk_[1][i]-0.1, current_state_.value[i]));
+     if(i == N_AX_GRIPPER)
+      current_state_local.value[i]=std::max(strk_[IDX_STRK_ENP_N][i] + 0.2, std::min(strk_[IDX_STRK_ENP_P][i]-0.2, current_state_.value[i]));
+    else
+      current_state_local.value[i]=std::max(strk_[IDX_STRK_ENP_N][i] + 0.1, std::min(strk_[IDX_STRK_ENP_P][i]-0.1, current_state_.value[i]));
   }
 
   delta  = msg->target.cartesian_data.x * msg->target.cartesian_data.x;
@@ -1633,7 +1780,12 @@ bool AlgorithmManager::jogCarlinFn(edo_core_msgs::MovementCommand *  msg)
           if(fabs(msg->target.joints_data[i]) > 0.01)
           {
             minimum=std::min(fabs(msg->target.joints_data[i]),minimum);
-            target_joint_.value[i] = (msg->target.joints_data[i] < 0) ? strk_[0][i] + 0.1 : strk_[1][i] - 0.1;
+            
+            if(i == N_AX_GRIPPER)
+              target_joint_.value[i] = (msg->target.joints_data[i] < 0) ? strk_[IDX_STRK_ENP_N][i] + 0.2 : strk_[IDX_STRK_ENP_P][i] - 0.2;
+            else
+              target_joint_.value[i] = (msg->target.joints_data[i] < 0) ? strk_[IDX_STRK_ENP_N][i] + 0.1 : strk_[IDX_STRK_ENP_P][i] - 0.1;
+            
 // printf("[%d] Joint %d has a delta %f\n",__LINE__,i,target_joint_.value[i]);
           }
 #if ENABLE_ROS_INFO
@@ -1653,29 +1805,8 @@ bool AlgorithmManager::jogCarlinFn(edo_core_msgs::MovementCommand *  msg)
     delta = minimum;
 
   {
-    ORL_cartesian_position tool_local;
-    ORL_cartesian_position uframe_local;
-    
-    memset(&tool_local, 0, sizeof(ORL_cartesian_position));
-    tool_local.unit_type = ORL_CART_POSITION;
-    tool_local.x = msg->tool.x;
-    tool_local.y = msg->tool.y;
-    tool_local.z = msg->tool.z;
-    tool_local.a = msg->tool.a;
-    tool_local.e = msg->tool.e;
-    tool_local.r = msg->tool.r;
-    frame_dump("TOOL", __LINE__, tool_local);
-    uframe_local.unit_type = ORL_CART_POSITION;
-    uframe_local.x = msg->frame.x;
-    uframe_local.y = msg->frame.y;
-    uframe_local.z = msg->frame.z;
-    uframe_local.a = msg->frame.a;
-    uframe_local.e = msg->frame.e;
-    uframe_local.r = msg->frame.r;
-    frame_dump("UFRAME", __LINE__, uframe_local);
-    /*                             $BASE     $TOOL       $UFRAME                                          */
-    status = ORL_initialize_frames (base_, tool_local, uframe_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-    if(!manageORLStatus(status,"ORL_initialize_frames"))
+;
+    if(!setReferenceFn(msg))
     {
       return false;
     }
@@ -1735,10 +1866,13 @@ bool AlgorithmManager::jogCarlinFn(edo_core_msgs::MovementCommand *  msg)
     for(int si_j = 0; si_j < 3; si_j++)
       R_old_[si_i][si_j] = R_new[si_i][si_j];
     
-  status = ORL_set_position(NULL, &current_state_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);  
-  if(!manageORLStatus(status,"ORL_set_position"))
+  if (algorithm_mode_ != MOVING)
   {
-    return false;
+    status = ORL_set_position(NULL, &current_state_local, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);  
+    if(!manageORLStatus(status,"ORL_set_position"))
+    {
+      return false;
+    }
   }
   
   memcpy(&target_cart_, &temp_cart_pos, sizeof(ORL_cartesian_position));
@@ -1766,7 +1900,7 @@ bool AlgorithmManager::jogCarlinFn(edo_core_msgs::MovementCommand *  msg)
   return true;
 }
 
-//funzione di jog in spazio cartesiano
+//funzione di jog stop
 bool AlgorithmManager::jogStopFn(edo_core_msgs::MovementCommand *  msg)
 {
 	if (algorithm_mode_ == MOVING)
@@ -1811,12 +1945,12 @@ int AlgorithmManager::setORLMovement(std::vector<int> move_parameters, int movem
   
 #if ENABLE_ROS_INFO
 	ROS_INFO("set ORL movement");
-#endif
 	if (move_parameters.size() != 3) 
 	{
 		ROS_ERROR("Invalid parameters...");
 		return MOVETYPE_UNDEF;
 	}
+#endif
 	
 	if(ovr>0)
 	{
@@ -1897,7 +2031,7 @@ int AlgorithmManager::setORLMovement(std::vector<int> move_parameters, int movem
     ROS_ERROR("MOVE UNDEFINED");
     si_status = MOVETYPE_UNDEF; //Movement type undefined
   }
-#if ENABLE_ALGOMNGR_PRINTFS
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
   elapsed_time = ros::Time::now() - start_preliminary_count_time;
   elapsed_time_in_msec = ((double)elapsed_time.toNSec()) / 1000000.0f;
   if (si_status == 0)
@@ -1914,7 +2048,7 @@ void AlgorithmManager::keepPosition()
 	{
 		joints_control_.joints[i].position = hold_position_.value[i];
 		joints_control_.joints[i].velocity = 0.0;
-		joints_control_.joints[i].current = 0.0;
+		joints_control_.joints[i].current = hold_current_.current[i];
 		joints_control_.joints[i].ff_velocity = 0.0;
 		joints_control_.joints[i].ff_current = 0.0;
 	}
@@ -1968,74 +2102,136 @@ edo_core_msgs::JointControlArray const& AlgorithmManager::getCurrentControl()
 
 void AlgorithmManager::updateControl()
 {
-  static bool debug1 = true;
-  static bool debug2 = true;
-  std_msgs::Int8 temp_algo_state;
-  temp_algo_state.data = algorithm_mode_;
-  algorithm_state_pub_.publish(temp_algo_state);
   edo_core_msgs::MovementCommand msg;
-  
-  //scodo i messaggi ricevuti per le move 
+
+  // Test if there are some msg in the msglist
   while (!msglist_.empty())
   {
 #if ENABLE_ROS_INFO
     ROS_INFO("pop move command");
 #endif
-    msg=msglist_.back();
-    msglist_.pop_back();
-#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
-printf ("[updateControl,%d] GET item %c\n",__LINE__,msg.move_command);
-#endif
+
+    // Get the first message from the back of the list, without pop it out
+    // In this way, the commands are received before the moves.
+    msg = msglist_.back();
+
     if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_MOVE)
     {
-      in_progress_moveCommand_ = msg;  // save the move command in progress, can be used later for the resume
-      if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_JOINT)
-      {
-        if(!moveTrjntFn(&msg))
+      if (alarm_state_ == false) 
+      {  
+        // Procedo con lo scheduling delle move solo se:
+        // 1) Non sto attendendo la fine di una move, cioe' non sono nello stato di WAITING
+        // 2) Oppure se la MOVE in corso NON e' una MOVE su cui dovrò attendere,
+        //    in altre parole, schedulo la prossima MOVE solo se e' in fly
+        
+        // Sono nella fase di terminazione della move corrente o in uno stato non consistente con l'esecuzione della move
+        if ((algorithm_mode_ == WAITING) || (algorithm_mode_ == PAUSE) || (algorithm_mode_ == FINISHED) || (algorithm_mode_ == BLOCKED))
+          break; 
+        // Sono durante una richiesta di stop a causa di una richiesta di PAUSE o di CANCEL con una move in corso
+        // Questo ferma anche una eventuale MOVE successiva ad una MOVE in fly, ma comunque mi sto fermando.
+        if ((pause_state_ == true) || (pending_cancel_ == true))
+          break; 
+        if (!MoveCommandMsgListInOrl_.empty()) 
         {
-          ROS_ERROR("Move Jnt not executed...");
-          feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
+          edo_core_msgs::MovementCommand tmpMsg;
+          tmpMsg = MoveCommandMsgListInOrl_.back();  
+          if (tmpMsg.delay != 255)
+            break;  // La prima move in esecuzione NON e' in fly
+        }       
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+printf ("[updateControl,%d] GET item %c ML:%d MCLS %d Ax1:%f\n",__LINE__,msg.move_command, msglist_.size(), MoveCommandMsgListInOrl_.size(), msg.target.joints_data[0]);
+#endif        
+        msglist_.pop_back(); // pop the message out of the list from the back.
+        //
+        // All the below functions, change the state to MOVING without testing from which state I come from.
+        // So it is mandatory that the current state must be consistent with the future state of MOVING.
+        // i.e. The current state can't be PAUSE for example.
+        //        
+        if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_JOINT)
+        {
+          if(!moveTrjntFn(&msg))
+          {
+            ROS_ERROR("Move Jnt not executed...");
+            feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
+          }
+        }
+        else if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR)
+        {
+          if(!moveCarlinFn(&msg))
+          {
+            ROS_ERROR("Move Lin not executed...");
+            feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
+          }
+        }
+        else if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_CIRCULAR)
+        {
+          if(!moveCarcirFn(&msg))
+          {
+            ROS_ERROR("Move Cir not executed...");
+            feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
+          }
         }
       }
-      else if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR)
+      else
       {
-        if(!moveCarlinFn(&msg))
-        {
-          ROS_ERROR("Move Lin not executed...");
-          feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
-        }
-      }
-      else if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_CIRCULAR)
-      {
-        if(!moveCarcirFn(&msg))
-        {
-          ROS_ERROR("Move Cir not executed...");
-          feedbackFn(MESSAGE_FEEDBACK::ERROR, State::FAILED_MOVE, __FUNCTION__, __LINE__);
-        }
+        msglist_.pop_back();
+        feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__);
       }
     }
     else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE)
     {
-      if(!movePauseFn(&msg))
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+printf ("[updateControl,%d] GET item %c\n",__LINE__,msg.move_command);
+#endif
+      msglist_.pop_back();
+      if (alarm_state_ == false) 
+      {  
+        if(!movePauseFn(&msg))
+        {
+          ROS_ERROR("Pause not executed...");
+          feedbackFn(MESSAGE_FEEDBACK::ERROR, State::GENERIC_ERROR, __FUNCTION__, __LINE__);
+        }
+      }
+      else
       {
-        ROS_ERROR("Pause not executed...");
-        feedbackFn(MESSAGE_FEEDBACK::ERROR, State::GENERIC_ERROR, __FUNCTION__, __LINE__);
+        feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 0, __FUNCTION__, __LINE__);
       }
     }
     else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME)
     {
-      if(!moveResumeFn(&msg))
-      {
-        ROS_ERROR("Resume not executed...");
-        feedbackFn(MESSAGE_FEEDBACK::ERROR, State::GENERIC_ERROR, __FUNCTION__, __LINE__);
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+printf ("[updateControl,%d] GET item %c\n",__LINE__,msg.move_command);
+#endif
+      msglist_.pop_back();
+      if (alarm_state_ == false) 
+      { 
+        if(!moveResumeFn(&msg))
+        {
+          ROS_ERROR("Resume not executed...");
+          feedbackFn(MESSAGE_FEEDBACK::ERROR, State::GENERIC_ERROR, __FUNCTION__, __LINE__);
+        }
       }
+      else
+      {
+        feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 75, __FUNCTION__, __LINE__);
+      } 
     }
     else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL)
     {
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+printf ("[updateControl,%d] GET item %c Lin %f\n",__LINE__,msg.move_command,msg.cartesian_linear_speed);
+#endif
+      msglist_.pop_back();
       if(!moveCancelFn(&msg))
       {
         ROS_ERROR("Cancel not executed...");
         feedbackFn(MESSAGE_FEEDBACK::ERROR, State::GENERIC_ERROR, __FUNCTION__, __LINE__);
+      }
+      while (!msglist_.empty())
+      {
+        msglist_.pop_back();
+        // For each Move Command popped from ORL give a feedback to machine_state/bridge
+        feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 20, __FUNCTION__, __LINE__); 
       }
     }
     else
@@ -2050,10 +2246,10 @@ printf ("[updateControl,%d] GET item %c\n",__LINE__,msg.move_command);
   while (!msglistJog_.empty())
   {
     msg = msglistJog_.back();
-    msglistJog_.pop_back();
 
     if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGMOVE)
     {
+      msglistJog_.pop_back();
       if (msg.move_type == E_MOVE_TYPE::E_MOVE_TYPE_JOINT)
       {
         if(!jogTrjntFn(&msg))
@@ -2070,9 +2266,26 @@ printf ("[updateControl,%d] GET item %c\n",__LINE__,msg.move_command);
           feedbackFn(MESSAGE_FEEDBACK::ERROR, State::GENERIC_ERROR, __FUNCTION__, __LINE__);
         }
       }
+
+      if (alarm_state_ == true)
+      {
+        if ((jog_state_ == true) && (alarm_exclusion_ == false))
+        {
+          start_jog_time_ = ros::Time::now();
+          alarm_exclusion_ = true;
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+printf ("[updateControl,%d] Alarm exclusion started\n",__LINE__);
+#endif
+        }
+      }
+      else
+      {
+        alarm_exclusion_ = false;
+      }
     }
     else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP)
     {
+      msglistJog_.pop_back();
       if(!jogStopFn(&msg))
       {
         ROS_ERROR("Move JOG stop not executed...");
@@ -2081,49 +2294,73 @@ printf ("[updateControl,%d] GET item %c\n",__LINE__,msg.move_command);
     }
     else
     {
+      msglistJog_.pop_back();
       ROS_WARN("Command not implemented, please use only accepted command type");
       feedbackFn(MESSAGE_FEEDBACK::ERROR, State::MOVETYPE_UNDEF, __FUNCTION__, __LINE__);
       return;
     }
   }
+
+#if 0
+######################################################################################################
+  if ((alarm_state_ == true) && (jog_state_ == true) && (alarm_exclusion_ == true))
+  {
+    ros::Duration d = ros::Time::now() - start_jog_time_;
+    if(d.toSec() >= (double)3.0)
+    {
+      alarm_exclusion_ = false;
+      if (moveInProgress_)
+      {
+        (void)ORL_stop_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+      }
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+printf ("[updateControl,%d] Alarm exclusion ended moveInProgress_ %d\n",__LINE__,moveInProgress_);
+#endif
+    }
+  }
+######################################################################################################
+#endif
+
+  {
+    // Publish algorithm_mode_
+    std_msgs::Int8 temp_algo_state;
+    temp_algo_state.data = algorithm_mode_;
+    algorithm_state_pub_.publish(temp_algo_state);
+  }
   
   if(algorithm_mode_ == MOVING)
   {
-    if(debug1)
-    {
-#if ENABLE_ROS_INFO
-      ROS_INFO("ALGO MODULE STARTED SENDING ORL CONTROL");
-#endif
-      debug1 = false;
-      debug2 = true;
-    }
-    setControl();
+    setControl(true);
   }
   else if(algorithm_mode_ == INITIALIZED)
   {
-    if(debug2)
-    {
-#if ENABLE_ROS_INFO
-      ROS_INFO("ALGO MODULE STARTED SENDING KEEP POSITION MESSAGES");
-#endif
-      debug2 = false;
-      debug1 = true;
-    }
+    setControl(false);
     keepPosition();
   }
   else if (algorithm_mode_ == WAITING)
   {
+    setControl(false);
     keepPosition();
     ros::Duration d = ros::Time::now() - start_wait_time_;
-    if(d.toSec() >= (double)delay_)
+    if ((d.toSec() >= (double)delay_) || (alarm_state_ == true))
     {
       waiting_ = false;
       setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
       delay_ = 255;
+      feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 13, __FUNCTION__, __LINE__);
+      if (pause_state_)
+      {
+        setAlgorithmMode(PAUSE, __FUNCTION__,__LINE__);
+      }
+      else
+      {
+        setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+      }
     }
   }
   else if (algorithm_mode_ == BLOCKED)
   {
+    setControl(false);
     keepPosition();
     waiting_ = false;
     pause_state_ = false;
@@ -2132,51 +2369,14 @@ printf ("[updateControl,%d] GET item %c\n",__LINE__,msg.move_command);
   }
   else if (algorithm_mode_ == PAUSE)
   {
-    int status;
-    if (pending_cancel_ == true)
-    {
-      setAlgorithmMode(RECOVERY, __FUNCTION__,__LINE__);
-#if ENABLE_ALGOMNGR_PRINTFS
-printf ("[%s,%d] ORL_cancel_motion\n",__FUNCTION__,__LINE__);
-#endif
-      status = ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-      (void)manageORLStatus(status,"ORL_cancel_motion"); // don't care the return status
-#if DO_TERMINATE_AFTER_CANCEL
-#if ENABLE_ALGOMNGR_PRINTFS
-printf ("[%s,%d] ORL_terminate_controller\n",__FUNCTION__,__LINE__);
-#endif
-#if ENABLE_ROS_WARN
-      ROS_WARN("Terminate and re-initialize ORL...");
-#endif
-
-      pthread_mutex_lock(&control_mutex_);
-	  
-      status = ORL_terminate_controller(LOCAL_VERBOSITY, ORL_CNTRL01);
-      if (!initializeORL())
-      {
-        ROS_ERROR("Impossible to Inizialize ORL");
-        // What can I do now?
-#if ENABLE_ALGOMNGR_PRINTFS
-printf ("[updateControl,%d] Failure initializeORL\n",__LINE__);
-#endif
-      }
-	  
-      pthread_mutex_unlock(&control_mutex_);
-	  
-      hold_position_.unit_type = ORL_POSITION_LINK_DEGREE; //TODO aggio il problema ma chi cancella il tipo, in caso di jog cartesiano?
-      status = ORL_set_position(NULL, &hold_position_, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-#endif
-      pause_state_ = false;
-      pending_cancel_ = false;
-      waiting_ = false;
-      setAlgorithmMode(INITIALIZED, __FUNCTION__,__LINE__);
-    }
+    setControl(false);
     keepPosition();
   }
   else if (algorithm_mode_ == FINISHED)
   {
     int status;
 
+    setControl(false);
     if (jog_state_ || pending_cancel_)
     {
       setAlgorithmMode(RECOVERY, __FUNCTION__,__LINE__);
@@ -2185,71 +2385,130 @@ printf ("[%s,%d] ORL_cancel_motion\n",__FUNCTION__,__LINE__);
 #endif
       status = ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
       (void)manageORLStatus(status,"ORL_cancel_motion"); // don't care the return status
-#if DO_TERMINATE_AFTER_CANCEL
-#if ENABLE_ALGOMNGR_PRINTFS
-printf ("[%s,%d] ORL_terminate_controller\n",__FUNCTION__,__LINE__);
-#endif
-#if ENABLE_ROS_WARN
-      ROS_WARN("Terminate and re-initialize ORL...");
-#endif
-
-      pthread_mutex_lock(&control_mutex_);
-	  
-      status = ORL_terminate_controller(LOCAL_VERBOSITY, ORL_CNTRL01);
-      if (!initializeORL())
-      {
-        ROS_ERROR("Impossible to Inizialize ORL");
-#if ENABLE_ALGOMNGR_PRINTFS
-printf ("[updateControl,%d] Failure initializeORL\n",__LINE__);
-#endif
-        // What can I do now?
-      }
-	  
-      pthread_mutex_unlock(&control_mutex_);
-	  
-      hold_position_.unit_type = ORL_POSITION_LINK_DEGREE; //TODO aggio il problema ma chi cancella il tipo, in caso di jog cartesiano?
-      status = ORL_set_position(NULL, &hold_position_, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
-#endif
       jog_state_ = false;
       pending_cancel_ = false;
+      while (!MoveCommandMsgListInOrl_.empty())
+      {
+        MoveCommandMsgListInOrl_.pop_front();
+        // For each Move Command popped from ORL give a feedback to machine_state/bridge
+        feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__); 
+      }
     }
 
     keepPosition();
     setAlgorithmMode(INITIALIZED, __FUNCTION__,__LINE__);
   }
+  return;
 }
 
-void AlgorithmManager::setControl()
+void AlgorithmManager::setControl(bool bactive)
 {
 	ORL_joint_value burned;
 	burned.unit_type = ORL_POSITION_LINK_DEGREE;
-	//boost::circular_buffer<ORL_joint_value> interpolation_data(3);
+  // edo_core_msgs::MovementCommandConstPtr msg;
+  edo_core_msgs::MovementCommand msg;
 	int status = 0;
-	int  sd_started,    
-	     sd_stopped,    
-	     sd_ended,      
-	     sd_decPhase,   
-	     sd_flyNode,    
-	     sd_flyStarted, 
-	     nodo,    
-	     nodo_fly,
-	     nodo_fly_old = 0;   
-	
+	int status_dyn_mod = 0;
+  int moveStarted,
+      moveStopped,
+      moveEnded,
+      moveDecPhase,
+      moveFly,
+      moveFlyStarted,
+      moveHandle,
+      moveFlyHandle;
+
+  if (bactive == false)
+  {
+
+    ORL_getMoveStatus (&moveStarted,    /* [OUT]  If True the actual movement is started */
+                       &moveStopped,    /* [OUT]  If True the actual movement is stopped */
+                       &moveEnded,      /* [OUT]  If True the actual movement is ended */
+                       &moveDecPhase,   /* [OUT]  If True the actual movement is in deceleration phase */
+                       &moveFly,        /* [OUT]  If True a second movement is already scheduled and ready to start */
+                       &moveFlyStarted, /* [OUT]  If True, if a second movement is already scheduled, indicate that the fly connection is started */
+                       &moveHandle,     /* [OUT]  Move Handle */
+                       &moveFlyHandle,  /* [OUT]  Fly Move Handle */
+                       ORL_CNTRL01, ORL_ARM1);
+    if (idleMoveHandle_ == 0)
+      idleMoveHandle_ = moveHandle;  // Initialize the idle move handle
+    if (idleMoveHandle_ == moveHandle)
+      moveInProgress_ = false;
+    else
+      moveInProgress_ = true;
+    return;
+  }
+  
 	for(size_t i = 0; i < NR_GET_NEXT_STEP_CALLS && status != FINAL_STEP; i++)
 	{
 		numberSteps_++;
 
 		status = ORL_get_next_interpolation_step(&burned, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
 
-#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
-		if ((status == 2) || ((status < 0) && (status != -42)))
-		{
-				printf("[setControl, ORL_get_next_interpolation_step, %d] numberSteps_ %d numberSteps_M42_ %d status %d\n",__LINE__, numberSteps_, numberSteps_M42_, status);
-				numberSteps_ = numberSteps_M42_ = 0;
-		}
+    if ((status >= 0) || (status == ORL_STATUS_IDLE))
+    {
+      ORL_getMoveStatus (&moveStarted,    /* [OUT]  If True the actual movement is started */
+                         &moveStopped,    /* [OUT]  If True the actual movement is stopped */
+                         &moveEnded,      /* [OUT]  If True the actual movement is ended */
+                         &moveDecPhase,   /* [OUT]  If True the actual movement is in deceleration phase */
+                         &moveFly,        /* [OUT]  If True a second movement is already scheduled and ready to start */
+                         &moveFlyStarted, /* [OUT]  If True, if a second movement is already scheduled, indicate that the fly connection is started */
+                         &moveHandle,     /* [OUT]  Move Handle */
+                         &moveFlyHandle,  /* [OUT]  Fly Move Handle */
+                         ORL_CNTRL01, ORL_ARM1);
+      if (idleMoveHandle_ == moveHandle)
+        moveInProgress_ = false;
+      else
+        moveInProgress_ = true;
+      if (moveStarted)
+        moveStopped_ = false;
+
+      if (( moveHandle == previousMoveFlyHandle_ ) && (jog_state_ == false))
+      {
+        msg = MoveCommandMsgListInOrl_.front();
+        // Move Command List Size MCLS
+        MoveCommandMsgListInOrl_.pop_front();  // Now ORL has no more this Move Command
+#if ENABLE_ALGOMNGR_PRINTFS
+        printf("[setControl,%d] Step:%d EndMoveFLY ORL MCLS %d Ax1:%f\n",__LINE__, numberSteps_, MoveCommandMsgListInOrl_.size(), msg.target.joints_data[0]);
 #endif
+        feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 10, __FUNCTION__, __LINE__);
+      }
+      previousMoveFlyHandle_ = moveFlyHandle;
+    }
+
+    int status_dyn;
+    ORL_Dynamic_Model sx_dyn_mod_fake;
     
-		if (status == -42)
+    if(numberSteps_ > FILTER_STEP)
+      status_dyn_mod = ORL_get_dynamic_model(NULL, NULL, NULL, &sx_dyn_mod_, 1, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+    else
+      status_dyn = ORL_get_dynamic_model(NULL, NULL, NULL, &sx_dyn_mod_fake, 1, LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+		
+#if ENABLE_DYNAMIC_MODEL_PRINTFS
+		if(status_dyn_mod != ORLOPEN_RES_OK)
+		{
+			printf("[setControl, %d] %d",__LINE__, status_dyn_mod);			
+		}
+		else
+		{
+			printf("[DYM] current %g,%g,%g,%g,%g,%gnn",sx_dyn_mod_.current [ORL_AX1],sx_dyn_mod_.current [ORL_AX2],sx_dyn_mod_.current [ORL_AX3],sx_dyn_mod_.current [ORL_AX4],sx_dyn_mod_.current [ORL_AX5],sx_dyn_mod_.current [ORL_AX6]);
+            printf("[DYM] tau_frict %g,%g,%g,%g,%g,%gnn",sx_dyn_mod_.tau_frict [ORL_AX1],sx_dyn_mod_.tau_frict [ORL_AX2],sx_dyn_mod_.tau_frict [ORL_AX3],sx_dyn_mod_.tau_frict [ORL_AX4],sx_dyn_mod_.tau_frict [ORL_AX5],sx_dyn_mod_.tau_frict [ORL_AX6]);
+			printf("[DYM] tau_link %g,%g,%g,%g,%g,%gnn",sx_dyn_mod_.tau_link [ORL_AX1],sx_dyn_mod_.tau_link [ORL_AX2],sx_dyn_mod_.tau_link [ORL_AX3],sx_dyn_mod_.tau_link [ORL_AX4],sx_dyn_mod_.tau_link [ORL_AX5],sx_dyn_mod_.tau_link [ORL_AX6]);
+			printf("[DYM] tau_motor %g,%g,%g,%g,%g,%gnn",sx_dyn_mod_.tau_motor [ORL_AX1],sx_dyn_mod_.tau_motor [ORL_AX2],sx_dyn_mod_.tau_motor [ORL_AX3],sx_dyn_mod_.tau_motor [ORL_AX4],sx_dyn_mod_.tau_motor [ORL_AX5],sx_dyn_mod_.tau_motor [ORL_AX6]);
+		}
+#endif	
+
+		if ((status == 1) || (status == 2) || ((status < 0) && (status != ORL_STATUS_IDLE)))
+		{
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+				printf("[ORL_GNIS, %d] Step:%d Steps_M42:%d status:%d\n",__LINE__, numberSteps_, numberSteps_M42_, status);
+#endif
+        if (status != 1) {
+          numberSteps_ = numberSteps_M42_ = 0;
+        }
+		}
+    
+		if (status == ORL_STATUS_IDLE)
 		{
 				++numberSteps_M42_; // The interpolator has not an active move. This is not really an error, so I do not take care of it.
 		}
@@ -2261,29 +2520,145 @@ void AlgorithmManager::setControl()
 						break;
 				}
 		}
-		else if(status == FINAL_STEP)
+		else if (status == FINAL_STEP)
 		{
-				if (pause_state_) 
-				{
-						setAlgorithmMode(PAUSE, __FUNCTION__,__LINE__);
-				}
-				else if (waiting_) 
-				{
-						setAlgorithmMode(WAITING, __FUNCTION__,__LINE__);
-						start_wait_time_ = ros::Time::now();
-				}
-				else
-				{
-						setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
-				}
-				jog_carlin_state_ = false;
-				feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__);
+      if (moveEnded == true)
+      {
+        if (alarm_state_ == true)
+        {
+          // There was a stop request due an enter in alarm state. As the move ended, this is the ack to exit from the alarm  
+          alarm_state_ack_ = true;  
+		      (void)ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+          memcpy(&hold_position_, &current_state_, sizeof(ORL_joint_value));
+          first_time_ = true;
+          while (!MoveCommandMsgListInOrl_.empty())
+          {
+            MoveCommandMsgListInOrl_.pop_front();
+            // For each Move Command popped from ORL give a feedback to machine_state/bridge
+            feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 30, __FUNCTION__, __LINE__); 
+          }
+          pause_state_ == false;
+          pending_cancel_ = false;
+		      waiting_ = false;
+          setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+        }
+        else
+        {
+          if (jog_state_) 
+          {
+            setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+            feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__);
+          }
+          else
+          {
+            if (!MoveCommandMsgListInOrl_.empty()) 
+            {
+              msg = MoveCommandMsgListInOrl_.front();
+              MoveCommandMsgListInOrl_.pop_front();  // Now ORL has no more this Move Command
+              if (pause_state_ == true)
+              {
+                feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 11, __FUNCTION__, __LINE__);
+                feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__);
+                pause_state_ == false;
+                setAlgorithmMode(PAUSE, __FUNCTION__,__LINE__);
+              }
+              else if ((msg.delay != 255) && (msg.delay != 0))
+              {
+                delay_ = msg.delay;
+                start_wait_time_ = ros::Time::now();
+                setAlgorithmMode(WAITING, __FUNCTION__,__LINE__);
+              }
+              else
+              {
+                feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 11, __FUNCTION__, __LINE__);
+                // Se ci sono MOVEs in ORL continue
+                if (MoveCommandMsgListInOrl_.empty()) 
+                  setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+              }
 #if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
-printf ("[manageORLStatus,%d] ORL Status FINAL_STEP (2) algorithm_mode_ %d\n",__LINE__, algorithm_mode_);
+              printf("[setControl,%d] Step:%d EndMove ORL ML:%d MCLS %d Ax1:%f\n",__LINE__, numberSteps_, msglist_.size(), MoveCommandMsgListInOrl_.size(), msg.target.joints_data[0]);
 #endif
+            }
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+            else
+            {
+              printf("[setControl,%d] Step:%d No Moves ORL MCLS %d\n",__LINE__, MoveCommandMsgListInOrl_.size());
+            }
+#endif
+          }
+        }
+        moveStopped_ = false;
+        jog_carlin_state_ = false;
+      }
+      if (moveStopped == true)
+      {        
+        if (alarm_state_ == true)
+        {
+          alarm_state_ack_ = true;  
+		      (void)ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+          memcpy(&hold_position_, &current_state_, sizeof(ORL_joint_value));
+          first_time_ = true;
+          while (!MoveCommandMsgListInOrl_.empty())
+          {
+            MoveCommandMsgListInOrl_.pop_front();
+            // For each Move Command popped from ORL give a feedback to machine_state/bridge
+            feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 30, __FUNCTION__, __LINE__); 
+          }        
+          pause_state_ == false;
+          pending_cancel_ = false;
+		      waiting_ = false;
+          setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+        }
+        else
+        {
+          if (jog_state_) 
+          {
+            feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__);
+            setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+          }
+          else
+          {
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+            printf("[setControl,%d] Move stopped ORL MCLS %d\n",__LINE__,MoveCommandMsgListInOrl_.size());
+#endif
+            if (pause_state_ == true)
+            {
+              feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__);
+              pause_state_ == false;
+              setAlgorithmMode(PAUSE, __FUNCTION__,__LINE__);
+            }
+            else if (pending_cancel_ == true)
+            {
+              feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 1, __FUNCTION__, __LINE__);
+              (void)ORL_cancel_motion(LOCAL_VERBOSITY, ORL_CNTRL01, ORL_ARM1);
+              (void)manageORLStatus(status,"ORL_cancel_motion"); // don't care the return status
+              pending_cancel_ = false;
+		          waiting_ = false;
+              while (!MoveCommandMsgListInOrl_.empty())
+              {
+                MoveCommandMsgListInOrl_.pop_front();
+                // For each Move Command popped from ORL give a feedback to machine_state/bridge
+                feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 20, __FUNCTION__, __LINE__); 
+              }        
+  		        setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+            }
+            else 
+            {
+  		        setAlgorithmMode(FINISHED, __FUNCTION__,__LINE__);
+            }
+          }
+        }
+        jog_carlin_state_ = false;
+        moveStopped_ = true;
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+        printf("[setControl,%d] Step:%d StopMove ORL MCLS %d\n",__LINE__, numberSteps_, MoveCommandMsgListInOrl_.size());
+#endif
+      }
 		}
-		else if(status == NEED_DATA)
+		else if (status == NEED_DATA)
 		{
+			if (alarm_state_ == false)
+			{
 				if (jog_carlin_state_)
 				{
 						if (!updateJogCarlin())
@@ -2293,57 +2668,66 @@ printf ("[manageORLStatus,%d] ORL Status FINAL_STEP (2) algorithm_mode_ %d\n",__
 				}
 				else
 				{
-						feedbackFn(MESSAGE_FEEDBACK::F_NEED_DATA, 0, __FUNCTION__, __LINE__);
+          if (pause_state_ == false) 
+          {
+            if (MoveCommandMsgListInOrl_.size() < 3)
+            {
+#if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
+              printf("[setControl,%d] Step:%d NeedNextMoveFLY ORL MCLS %d\n",__LINE__, numberSteps_, MoveCommandMsgListInOrl_.size());
+#endif
+						  feedbackFn(MESSAGE_FEEDBACK::F_NEED_DATA, 12, __FUNCTION__, __LINE__);
+            }
+          }
 				}
+			}
 		}
-    
 		interpolation_data_.push_back(burned);
+  }
 
-		if (status >= 0)
-		{
-				ORL_getMoveStatus (&sd_started,    /* [OUT]  If True the actual movement is started */
-                           &sd_stopped,    /* [OUT]  If True the actual movement is stopped */
-                           &sd_ended,      /* [OUT]  If True the actual movement is ended */
-                           &sd_decPhase,   /* [OUT]  If True the actual movement is in deceleration phase */
-                           &sd_flyNode,    /* [OUT]  If True a second movement is already scheduled and ready to start */
-                           &sd_flyStarted, /* [OUT]  If True, if a second movement is already scheduled, indicate that the fly connection is started */
-                           &nodo,          /* [OUT]  If True, if a second movement is already scheduled, indicate that the fly connection is started */
-                           &nodo_fly,      /* [OUT]  If True, if a second movement is already scheduled, indicate that the fly connection is started */
-                           ORL_CNTRL01, ORL_ARM1);
-      	
-				if ( nodo == nodo_fly_old ) // alla partenza del fly considero terminata la prima move
-				{
-						feedbackFn(MESSAGE_FEEDBACK::COMMAND_EXECUTED, 10, __FUNCTION__, __LINE__);
-				}
-				nodo_fly_old = nodo_fly;
-		}  
-	}
-	
-	for(size_t i = 0; i < joints_control_.joints.size(); i++)
-	{
-		if (interpolation_data_.size() < 3) 
-		{
-			ROS_ERROR("Buffer circolare parzialmente vuoto!!!");
-		}
+  if (alarm_state_ == false)
+  {
+    if (interpolation_data_.size() < 3) 
+    {
+      ROS_ERROR("Buffer circolare parzialmente vuoto!!!");
+    }
+    else
+    {
+      for(size_t i = 0; i < joints_control_.joints.size(); i++)
+      {
+        if (status == FINAL_STEP)
+        {
+          joints_control_.joints[i].position = interpolation_data_.back().value[i];
+        }
+        else
+        {
+          joints_control_.joints[i].position = interpolation_data_[1].value[i];
+        }
 
-		if (status == FINAL_STEP)
-		{
-			joints_control_.joints[i].position = interpolation_data_.back().value[i];
-		}
-		else
-		{
-			joints_control_.joints[i].position = interpolation_data_[1].value[i];
-		}
-		
-		float d_angle1 = interpolation_data_[1].value[i] - interpolation_data_[0].value[i];
-		float d_angle2 = interpolation_data_[2].value[i] - interpolation_data_[1].value[i];
+        float d_angle1 = interpolation_data_[1].value[i] - interpolation_data_[0].value[i];
+        float d_angle2 = interpolation_data_[2].value[i] - interpolation_data_[1].value[i];
 
-		hold_position_.value[i] = joints_control_.joints[i].position;
+        hold_position_.value[i] = joints_control_.joints[i].position;
+        hold_current_.current[i] = sx_dyn_mod_.current[i];
 
-		joints_control_.joints[i].velocity    = (d_angle1 + d_angle2) / DUE_PER_TS;
-		joints_control_.joints[i].current     = (d_angle2 - d_angle1) / TS_SQUARE;
-		joints_control_.joints[i].ff_velocity = joints_control_.joints[i].velocity;
-	}
+        joints_control_.joints[i].velocity    = (d_angle1 + d_angle2) / DUE_PER_TS;
+        joints_control_.joints[i].current     = sx_dyn_mod_.current[i];
+        joints_control_.joints[i].ff_velocity = joints_control_.joints[i].velocity;
+        // joints_control_.joints[i].ff_current  = 0.0f;
+      }
+    }
+  }
+  else
+  {
+    // Do not touch the position, which is the last target position just before entering in the alarm state
+    // In alarm state force velocity etc to zero.
+    for(size_t i = 0; i < joints_control_.joints.size(); i++)
+    {
+      joints_control_.joints[i].velocity    = 0.0f;
+      // joints_control_.joints[i].current     = hold_current_.current[i];
+      joints_control_.joints[i].ff_velocity = 0.0f;
+      // joints_control_.joints[i].ff_current  = 0.0f;
+    }
+  }
 }
 
 int AlgorithmManager::get_Strk(int strk[2][ORL_MAX_AXIS])
@@ -2610,3 +2994,211 @@ bool AlgorithmManager::SwitchControl(edo_core_msgs::ControlSwitch::Request &req,
 	}
 	return true;
 }
+
+bool AlgorithmManager::collisionCheck(float vr_CurMis, float vr_CurDyn, int i)
+{
+
+    /* -------------------------------- DECLARATION --------------------------- */
+    float vr_TsMis;
+    float vr_FiltCurDyn_Freq;
+    float vr_FiltCurMis_Freq;
+	
+    float vr_FiltCurDyn_a1;
+    float vr_FiltCurDyn_a2;
+    float vr_FiltCurDyn_ExpCoef ;
+    float vr_FiltCurDyn_ExpValue;
+    float vr_FiltCurMis_a1;
+    float vr_FiltCurMis_a2;
+    float vr_FiltCurMis_ExpCoef ;
+    float vr_FiltCurMis_ExpValue;   
+	
+    float vr_FiltCurDyn_1[6];
+    float vr_FiltCurDyn_2[6];
+    float   vr_CurFiltDyn[6]  ;
+    float vr_FiltCurMis_1[6];
+    float vr_FiltCurMis_2[6];
+    float   vr_CurFiltMis[6]  ;
+    float       vr_CurRes[6];   
+    float     vr_IstError[6];
+    bool  vb_ContFlag;
+    bool  vb_IstFlag;
+    bool  vb_CollisionFlag;
+	float vr_Kf_Thrs_Ist;
+	
+    
+    /* -------------------------------- SETTINGS --------------------------- */
+      /* Sample Time */
+        vr_TsMis = 0.010f;
+
+      /* Cur Dyn Freq */
+        vr_FiltCurDyn_Freq = 0.78f; // definito in questa funzione
+        
+      /* Cur Mis Freq */
+        vr_FiltCurMis_Freq = 2.0f; // definito in questa funzione
+/* 
+#if 0       
+  if(vr_curr_limit == 0)
+  {
+	if(_ktorque > 0){
+		vr_Kf_Thrs_Ist = _ktorque;
+	}
+	else if(_ktorque == 0){
+		vr_Kf_Thrs_Ist = MAX_THRS;
+	}
+	else{
+		*flag=false;
+		return 0.0f;
+	}
+  }
+  else if(vr_curr_limit < 0){
+	vr_Kf_Thrs_Ist = MAX_THRS;  
+  }
+	  
+  else{
+	vr_Kf_Thrs_Ist = vr_curr_limit;
+  }
+  
+#endif 
+*/	  
+	  /* CUSTOMIZZAZIONE SOGLIE    */
+	  switch (i){
+	  	
+		// case (0):
+	  	  // vr_Kf_Thrs_Ist = KF_THRS_IST0;
+	  	  // break;
+	  	case (0):
+	  	  vr_Kf_Thrs_Ist = KF_THRS_IST1;
+	  	  break;
+	  	case (1):
+	  	  vr_Kf_Thrs_Ist = KF_THRS_IST2;
+	  	  break;
+	  	case (2):
+	  	  vr_Kf_Thrs_Ist = KF_THRS_IST3;
+	  	  break;
+	  	case (3):
+	  	  vr_Kf_Thrs_Ist = KF_THRS_IST4;
+	  	  break;
+	  	case (4):
+	  	  vr_Kf_Thrs_Ist = KF_THRS_IST5;
+	  	  break;
+	  	case (5):
+	  	  vr_Kf_Thrs_Ist = KF_THRS_IST6;
+	  	  break;
+	  }
+
+      /* IMPLEMETAZIONE DEI FILTRI    */
+        /* Implementazione filtro su corrente modello dinamico       */   
+        if (vr_FiltCurDyn_Freq <= QUASIZERO_FLOAT)
+        {
+          vr_FiltCurDyn_a1 = ZERO_FLOAT;
+          vr_FiltCurDyn_a2 = ZERO_FLOAT;
+
+        }
+        else
+        {
+          vr_FiltCurDyn_ExpCoef  =     - TWO_FLOAT * PI_GRECO * vr_FiltCurDyn_Freq * vr_TsMis;
+          vr_FiltCurDyn_ExpValue =                          vr_FiltCurDyn_ExpCoef/4.0 + 1.0;
+          vr_FiltCurDyn_ExpValue = vr_FiltCurDyn_ExpValue * vr_FiltCurDyn_ExpCoef/3.0 + 1.0;
+          vr_FiltCurDyn_ExpValue = vr_FiltCurDyn_ExpValue * vr_FiltCurDyn_ExpCoef/2.0 + 1.0;
+          vr_FiltCurDyn_ExpValue = vr_FiltCurDyn_ExpValue * vr_FiltCurDyn_ExpCoef/1.0 + 1.0;
+          vr_FiltCurDyn_a1       =                        - TWO_FLOAT * vr_FiltCurDyn_ExpValue;
+          vr_FiltCurDyn_a2       =          vr_FiltCurDyn_ExpValue * vr_FiltCurDyn_ExpValue; 
+        }
+      
+       /* Implementazione filtro su corrente misurata*/
+       
+        if (vr_FiltCurMis_Freq <= QUASIZERO_FLOAT)
+        {
+          vr_FiltCurMis_a1 = ZERO_FLOAT;
+          vr_FiltCurMis_a2 = ZERO_FLOAT;
+
+        }
+        else
+        {          
+          vr_FiltCurMis_ExpCoef  =     - TWO_FLOAT * PI_GRECO * vr_FiltCurMis_Freq * vr_TsMis;
+          vr_FiltCurMis_ExpValue =                          vr_FiltCurMis_ExpCoef/4.0 + 1.0;
+          vr_FiltCurMis_ExpValue = vr_FiltCurMis_ExpValue * vr_FiltCurMis_ExpCoef/3.0 + 1.0;
+          vr_FiltCurMis_ExpValue = vr_FiltCurMis_ExpValue * vr_FiltCurMis_ExpCoef/2.0 + 1.0;
+          vr_FiltCurMis_ExpValue = vr_FiltCurMis_ExpValue * vr_FiltCurMis_ExpCoef/1.0 + 1.0;
+          vr_FiltCurMis_a1       =                        - TWO_FLOAT * vr_FiltCurMis_ExpValue;
+          vr_FiltCurMis_a2       =          vr_FiltCurMis_ExpValue * vr_FiltCurMis_ExpValue;          
+        }
+
+        _curfilt_cnt[i] ++;
+        if (_curfilt_cnt[i] == 1)
+        {
+         /* 1st time: */ 
+          _FiltCurDyn_Regr2[i]  = vr_CurDyn;
+          _FiltCurDyn_Regr1[i]  = vr_CurDyn;
+          vr_FiltCurDyn_1[i]    = vr_CurDyn;
+          vr_FiltCurDyn_2[i]    = vr_CurDyn;
+          vr_CurFiltDyn[i]      = vr_CurDyn; 
+
+          _FiltCurMis_Regr2[i]  = vr_CurMis;
+          _FiltCurMis_Regr1[i]  = vr_CurMis;
+          vr_FiltCurMis_1[i]    = vr_CurMis;
+          vr_FiltCurMis_2[i]    = vr_CurMis;
+          vr_CurFiltMis[i]      = vr_CurMis;   
+
+            // palSetPad(GPIOA,11);
+            // palSetPad(GPIOA,12);
+        }
+        else
+        {
+          /* next */ //a1 a2 ok, regr1 regr2 1 2 no!
+           
+         vr_FiltCurDyn_1[i]   = _FiltCurDyn_Regr1[i];
+         vr_FiltCurDyn_2[i]   = _FiltCurDyn_Regr2[i];
+         vr_CurFiltDyn[i]     = (ONE_FLOAT + vr_FiltCurDyn_a1 + vr_FiltCurDyn_a2) * vr_CurDyn - vr_FiltCurDyn_a1 * vr_FiltCurDyn_1[i] - vr_FiltCurDyn_a2 * vr_FiltCurDyn_2[i];
+         _FiltCurDyn_Regr2[i] = _FiltCurDyn_Regr1[i];
+         _FiltCurDyn_Regr1[i] = vr_CurFiltDyn[i]; 
+
+
+         vr_FiltCurMis_1[i]   = _FiltCurMis_Regr1[i];
+         vr_FiltCurMis_2[i]   = _FiltCurMis_Regr2[i];
+         vr_CurFiltMis[i]     = (ONE_FLOAT + vr_FiltCurMis_a1 + vr_FiltCurMis_a2) * vr_CurMis - vr_FiltCurMis_a1 * vr_FiltCurMis_1[i] - vr_FiltCurMis_a2 * vr_FiltCurMis_2[i];
+         _FiltCurMis_Regr2[i] = _FiltCurMis_Regr1[i];
+         _FiltCurMis_Regr1[i] = vr_CurFiltMis[i];
+        
+        }
+        
+     // CALCOLO RESIDUI   
+        vr_CurRes[i]     = vr_CurFiltDyn[i] - vr_CurFiltMis[i];
+        vr_IstError[i]   = fabs(vr_CurRes[i]);    
+		
+		
+
+		
+     // APPLICAZIONE DELLE SOGLIE
+    
+     // soglia su valore istantaneo 
+        if (vr_IstError[i] > vr_Kf_Thrs_Ist)  
+        {
+          vb_IstFlag = true; 
+		  //printf("CurRes: %f \t Jnt: %d\n", vr_IstError[i], i+1);
+        }
+        else
+        {
+          vb_IstFlag = false;           
+        } // if (vr_IstError > vr_Kf_Thrs_Ist)
+     // soglia sul valore continuo
+        vb_ContFlag = false;
+         
+     // OR sulle soglie
+        if (vb_ContFlag || vb_IstFlag)
+        {  
+          vb_CollisionFlag = true;
+        }
+        else
+        {
+          vb_CollisionFlag = false;  
+        } // if wb_ContFlag | wb_IstFlag    
+    
+  //*vr_CurMisFilt = vr_CurFiltMis;
+  
+  //*vr_CurDynFilt = vr_CurFiltDyn;
+
+  
+  return vb_CollisionFlag; 
+
+} // AlgorithmManager::collisionCheck

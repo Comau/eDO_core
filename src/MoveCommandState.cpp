@@ -30,199 +30,341 @@
  * MoveCommandState.cpp
  *
  *  Created on: Jul 3, 2017
- *      Author: comau
+ *  Author: comau
  */
 
 #include "MoveCommandState.h"
 #include "SubscribePublish.h"
 
-//#include <unistd.h>
-//#include <fcntl.h>
+#if STATE_MACHINE_DEVELOPMENT_RELEASE
+#define ENABLE_MINIMAL_MCS_PRINTFS (1==0)
+#define ENABLE_ROS_INFO  (1==0)
+#else
+#define ENABLE_MINIMAL_MCS_PRINTFS (1==0)
+#define ENABLE_ROS_INFO  (1==0)
+#endif
 
 MoveCommandState* MoveCommandState::instance = NULL;
 
 MoveCommandState::MoveCommandState() {
-	machineCurrentState = MACHINE_CURRENT_STATE::MOVE;
-	bufferSize = 5;
+  machineCurrentState = MACHINE_CURRENT_STATE::MOVE;
+  bufferSize = 5;
 }
 
 
 void MoveCommandState::Init() {
-	moveMsgBuffer.clear();
-	firstSent = false;
-	internalState = INTERNAL_STATE::IDLE;
-	counterMsgSent = 0;
-	counterAckReceived = 0;
+  moveMsgBuffer.clear();
+  if (moveMsgBuffer.capacity() < bufferSize)
+  {
+    moveMsgBuffer.reserve(bufferSize);
+  }
+  firstSent = false;
+  internalState = INTERNAL_STATE::IDLE;
+  counterMsgSent = 0;
+  counterAckReceived = 0;
 }
 
 MoveCommandState* MoveCommandState::getInstance() {
 
-	if (instance == NULL) {
-		instance = new MoveCommandState();
-	}
+  if (instance == NULL) {
+    instance = new MoveCommandState();
+  }
 
-	instance->Init();
-	return instance;
+  instance->Init();
+  return instance;
 }
 
 void MoveCommandState::getCurrentState() {
-
-	ROS_INFO("Current State is: MOVE");
+#if ENABLE_ROS_INFO
+  ROS_INFO("Current State is: MOVE");
+#endif
+  return;
 }
+
+#if ENABLE_MINIMAL_MCS_PRINTFS
+static const char *sam_AckTypes[6] = {
+  "BUFFER_FULL     (-3)",
+  "COMMAND_REJECTED(-2)", /* comando scartato */
+  "ERROR           (-1)", /* l’esecuzione della move è stata interrotta per un errore */
+  "COMMAND_RECEIVED( 0)", /* acknowledgement, comando ricevuto */
+  "F_NEED_DATA     ( 1)", /* si chiede il punto successivo */
+  "COMMAND_EXECUTED( 2)"  /* movimento completato */
+};
+
+static void printAck(const edo_core_msgs::MovementFeedback& ack, const char *apc_func, int asi_line)
+{ 
+  printf("printAckType [%s,%d] <%s> Data %d\n",apc_func,asi_line,sam_AckTypes[ack.type-MESSAGE_FEEDBACK::BUFFER_FULL],ack.data);  
+  return;
+}
+#endif
 
 State* MoveCommandState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack) {
 
-	if (ack.type == COMMAND_EXECUTED) {
+#if ENABLE_MINIMAL_MCS_PRINTFS
+  printAck(ack,"MoveCommandState::HandleMoveAck from Algo",__LINE__);
+#endif
+  if (ack.type == COMMAND_EXECUTED) 
+  {
+    // Aggiorno lo stato interno
+    if (internalState == INTERNAL_STATE::CANCEL)
+    {
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMoveAck,%d] Force a CANCEL Move Command Size:%d\n",__LINE__,moveMsgBuffer.size());
+#endif
+      edo_core_msgs::MovementCommand cancelMsg;
+      cancelMsg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL;
+      ExecuteNextMove(cancelMsg);
+      return previousState;
+    }
+    else if (internalState == INTERNAL_STATE::RESUME)
+    {
+      internalState = INTERNAL_STATE::IDLE;
+    }
 
-		// Aggiorno lo stato interno
-		if(internalState == INTERNAL_STATE::CANCEL){
-			edo_core_msgs::MovementCommand cancelMsg;
-			cancelMsg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL;
-			ExecuteNextMove(cancelMsg);
-			return previousState;
-		} else if(internalState == INTERNAL_STATE::IDLE){ // rimuovo il waypoint eseguito
-			if(!moveMsgBuffer.empty()){
-				moveMsgBuffer.erase(moveMsgBuffer.begin());
-				// std::cout << "Removed point: buf size " << moveMsgBuffer.size() << '\n';
-			}
-		} else if(internalState == INTERNAL_STATE::RESUME){ // rimuovo il waypoint eseguito
-			internalState = INTERNAL_STATE::IDLE;
-			// std::cout << "Resume move: buf size " << moveMsgBuffer.size() << '\n';
-		}
+    // Inoltro ack a bridge
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMoveAck,%d] Data %d to Bridge\n",__LINE__,ack.data);
+#endif
+    SubscribePublish* SPInstance = SubscribePublish::getInstance();
+    SPInstance->MoveAck(ack);
 
-		counterAckReceived++;
-		ROS_INFO("Msg sent %lu", counterMsgSent);
-		ROS_INFO("Ack received %lu", counterAckReceived);
+    if (internalState == INTERNAL_STATE::IDLE)
+    {
+      // Invio ad algorithm il nuovo messagggio (se esiste)
+      if (moveMsgBuffer.empty())
+        return previousState;
+      ExecuteNextMove(moveMsgBuffer.front());
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[MoveCommandState,%d] ENM MCS:%d send to ALGO\n",__LINE__,moveMsgBuffer.size());
+#endif
+      moveMsgBuffer.erase(moveMsgBuffer.begin()); // e lo rimuovo dalla coda
+    }
+  }
+  else if (ack.type == F_NEED_DATA) 
+  {
+    if (internalState == INTERNAL_STATE::IDLE)
+    {
+      // Inoltro ack a bridge
+#if ENABLE_MINIMAL_MCS_PRINTFS
+      printAck(ack,"[HandleMoveAck,%d] to Bridge F_NEED_DATA",__LINE__);
+#endif
+      SubscribePublish* SPInstance = SubscribePublish::getInstance();
+      SPInstance->MoveAck(ack);
 
+      // Invio ad algorithm il MOVE Command successivo(se la UI lo ha gia' inviato)
+      // Se ho un buffer in coda, lo invio
+      if (!moveMsgBuffer.empty())
+      {
+        ExecuteNextMove(moveMsgBuffer.front());
+#if ENABLE_MINIMAL_MCS_PRINTFS
+        printf ("[MoveCommandState,%d] ENM in FLY MCS:%d send to ALGO\n",__LINE__,moveMsgBuffer.size());
+#endif
+        moveMsgBuffer.erase(moveMsgBuffer.begin()); // e lo rimuovo dalla coda
+        return this;
+      }
+#if ENABLE_MINIMAL_MCS_PRINTFS
+      else
+      {
+        printf ("[MoveCommandState,%d] No Move Commands available Size:%d\n",__LINE__,moveMsgBuffer.size());
+      }
+#endif
+    }
+  } 
+  else if ((ack.type == ERROR) || (ack.type == BUFFER_FULL) || (ack.type == COMMAND_REJECTED))
+  {
+    SubscribePublish* SPInstance = SubscribePublish::getInstance();
+    SPInstance->MoveAck(ack);
+    return previousState;
+  } 
+#if ENABLE_MINIMAL_MCS_PRINTFS
+  else if (ack.type == COMMAND_RECEIVED)
+  { 
+    // non faccio nulla
+    printAck(ack,"MoveCommandState::HandleMoveAck non faccio nulla",__LINE__);
+  }
+#endif
+  else
+  {
+    // se è un ack type diverso e non ho altri punti torno nello stato precedente
+    if (moveMsgBuffer.empty())
+      return previousState;
+  }
 
-		// Inoltro ack a bridge
-		SubscribePublish* SPInstance = SubscribePublish::getInstance();
-		SPInstance->MoveAck(ack);
-
-
-		if (internalState == INTERNAL_STATE::IDLE)
-		{
-			// Invio ad algorithm il nuovo messagggio (se esiste)
-			if(!moveMsgBuffer.empty())
-				ExecuteNextMove(moveMsgBuffer.front());
-			else
-				return previousState;
-
-			// Se il buffer era pieno prima di dell'ack, richiedo il waypoint successivo
-			if(moveMsgBuffer.size() == bufferSize-1){
-				SendMovementAck(F_NEED_DATA, counterMsgSent);
-			}
-		}
-
-	} else if (ack.type == ERROR) {
-		SubscribePublish* SPInstance = SubscribePublish::getInstance();
-		SPInstance->MoveAck(ack);
-		return previousState;
-	} else if (ack.type == COMMAND_RECEIVED || ack.type == F_NEED_DATA) { 
-		// non faccio nulla
-	} else {
-		// se è un ack type diverso da ERROR o COMMAND_EXECUTED e non ho altri punti torno nello stato precedente
-		if(moveMsgBuffer.empty())
-			return previousState;
-	}
-
-	return this;
+  return this;
 }
 
 State* MoveCommandState::HandleMove(const edo_core_msgs::MovementCommand& msg) {
 
-	if(!MessageIsValid(msg)){
-		SendMovementAck(COMMAND_REJECTED, 0);
-		if(moveMsgBuffer.empty())
-			return previousState;
-		return this;
-	}
-
-	if(!InternalStateIsValid(msg.move_command)){
-		SendMovementAck(COMMAND_REJECTED, 0);
-		if(moveMsgBuffer.empty())
-			return previousState;
-		return this;
-	}
-
-	// messaggio valido, aggiorno lo stato interno
-	if ((internalState == INTERNAL_STATE::IDLE) && (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE))
+  if (!MessageIsValid(msg))
   {
-		internalState = INTERNAL_STATE::PAUSE;
-	} else if((internalState == INTERNAL_STATE::PAUSE) && (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME))
-  {
-		internalState = INTERNAL_STATE::RESUME;
-	} else if(msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL)
-  {
-		internalState = INTERNAL_STATE::CANCEL;
-	}
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMove,%d] Internal state %d Move Command %c Rejected\n",__LINE__, internalState, msg.move_command);
+#endif
+    SendMovementAck(COMMAND_REJECTED, 0, __LINE__);
+    return this;
+  }
 
-	// controllo il movemente type e genero output
+  if (!InternalStateIsValid(msg.move_command))
+  {
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMove,%d] Internal state %d Move Command %c Rejected\n",__LINE__, internalState, msg.move_command);
+#endif
+    if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_MOVE) // e' una move
+    {
+      // It is possible to rx a MOVE in PAUSE state due to some timing issues.
+      // It is not a big issue. Just put it into the queue and wait for a better time
+      moveMsgBuffer.push_back(msg);
+      SendMovementAck(COMMAND_RECEIVED, 0, __LINE__);
+    }
+    else
+    {      
+      SendMovementAck(COMMAND_REJECTED, 0, __LINE__);
+    }
+    return this;
+  }
+
+  // messaggio valido
+
+  // controllo il Move Command type e genero output
   if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE)
-	{
-		SendMovementAck(COMMAND_RECEIVED, 0);
-		return ExecuteNextMove(msg);
-	}
-	else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL)
-	{
-		SendMovementAck(COMMAND_RECEIVED, 0);
-		moveMsgBuffer.clear();
-		edo_core_msgs::MovementCommand txMsg;
-		txMsg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE;
-		return ExecuteNextMove(txMsg);
-	}
-	else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME)
-	{
-		SendMovementAck(COMMAND_RECEIVED, 0);
-		return ExecuteNextMove(msg);
-	}
-	else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_MOVE) // e' una move
-	{
-		if(moveMsgBuffer.size() >= bufferSize){
-			SendMovementAck(BUFFER_FULL, 0);
-			return this;
-		}
+  {
+    SendMovementAck(COMMAND_RECEIVED, 0, __LINE__);
+    // Aggiorno lo stato interno
+    if (internalState == INTERNAL_STATE::IDLE)
+    {
+      internalState = INTERNAL_STATE::PAUSE;
+      // Send the PAUSE command to Algorithm Manager
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMove,%d] Internal state %d Move Command %c send to ALGO\n",__LINE__, internalState, msg.move_command);
+#endif
+      ExecuteNextMove(msg);
+      return this;
+    }
+#if ENABLE_MINIMAL_MCS_PRINTFS
+    else
+    {
+printf ("[HandleMove,%d] Internal state %d Move Command %c\n",__LINE__, internalState, msg.move_command);
+    }
+#endif
+  }
+  else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL)
+  {
+    SendMovementAck(COMMAND_RECEIVED, 0, __LINE__);
+    // Aggiorno lo stato interno
+    internalState = INTERNAL_STATE::CANCEL;
+    // Filtering the CANCEL command for Algorithm Manager
+    // First empty the buffer
+    while (!moveMsgBuffer.empty()) 
+    {
+#if ENABLE_MINIMAL_MCS_PRINTFS
+      printf ("[HandleMove,%d] flush MCS:%d\n",__LINE__,moveMsgBuffer.size());
+#endif
+      moveMsgBuffer.erase(moveMsgBuffer.begin()); // e lo rimuovo dalla coda
+      SendMovementAck(COMMAND_EXECUTED, 20, __LINE__);
+    }
+    // moveMsgBuffer.clear();
+    // Create another MOVE Command with a PAUSE request.
+    edo_core_msgs::MovementCommand txMsg;
+    txMsg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_PAUSE;
+    // Send the PAUSE command to Algorithm Manager
+    ExecuteNextMove(txMsg);
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMove,%d] Internal state %d Move Command %c but send to ALGO a PAUSE request\n",__LINE__, internalState, msg.move_command);
+#endif
+    return this;
+  }
+  else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_RESUME)
+  {
+    SendMovementAck(COMMAND_RECEIVED, 0, __LINE__);
+     if (internalState == INTERNAL_STATE::PAUSE)
+    {
+      // Aggiorno lo stato interno
+      internalState = INTERNAL_STATE::IDLE;
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMove,%d] Internal state %d Move Command %c send to ALGO\n",__LINE__, internalState, msg.move_command);
+#endif
+      // Send the RESUME command to Algorithm Manager
+      ExecuteNextMove(msg);
+      return this;
+    }
+#if ENABLE_MINIMAL_MCS_PRINTFS
+    else
+    {
+printf ("[HandleMove,%d] Internal state %d Move Command %c\n",__LINE__, internalState, msg.move_command);
+    }
+#endif
+  }
+  else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_MOVE) // e' una move
+  {
+    if(moveMsgBuffer.size() >= bufferSize)
+    {
+      SendMovementAck(COMMAND_RECEIVED, 0, __LINE__);    
+      SendMovementAck(COMMAND_EXECUTED, 100, __LINE__);
+      SendMovementAck(BUFFER_FULL, 0, __LINE__);
+      return this;
+    }
 
-		moveMsgBuffer.push_back(msg);
+    // invio il waypoint ad Algo
+     if (internalState == INTERNAL_STATE::IDLE)
+    {
+      if (!moveMsgBuffer.empty()) 
+      {
+        moveMsgBuffer.push_back(msg);
+        ExecuteNextMove(moveMsgBuffer.front());
+#if ENABLE_MINIMAL_MCS_PRINTFS
+        printf ("[MoveCommandState,%d] ENM in FLY MCS:%d send to ALGO\n",__LINE__,moveMsgBuffer.size());
+#endif
+        moveMsgBuffer.erase(moveMsgBuffer.begin()); // e lo rimuovo dalla coda
+      }
+      else
+      {
+        ExecuteNextMove(msg);
+      }
+#if ENABLE_MINIMAL_MCS_PRINTFS
+      printf ("[HandleMove,%d] ENM MCS:%d sent to ALGO\n",__LINE__,moveMsgBuffer.size());
+#endif
+    }
+    else
+    {
+      moveMsgBuffer.push_back(msg);
+#if ENABLE_MINIMAL_MCS_PRINTFS
+      printf ("[HandleMove,%d] RX Cmd Move MCS:%d\n",__LINE__,moveMsgBuffer.size());
+#endif
+    }
+    SendMovementAck(COMMAND_RECEIVED, 0, __LINE__);    
+  }
+  else 
+  {
+#if ENABLE_MINIMAL_MCS_PRINTFS
+printf ("[HandleMove,%d] Internal state %d Move Command %c Cosa e'?\n",__LINE__, internalState, msg.move_command);
+#endif
+    return previousState;  // Cosa e'?
+  }
 
-		counterMsgSent++;
-		ROS_INFO("Msg sent %lu", counterMsgSent);
-		ROS_INFO("Ack received %lu", counterAckReceived);
-
-		SendMovementAck(COMMAND_RECEIVED, int8_t(counterMsgSent));
-
-		// se il buffer non è pieno chiedo il waypoint successivo
-		if(moveMsgBuffer.size() < bufferSize)
-			SendMovementAck(F_NEED_DATA, int8_t(counterMsgSent));
-
-		// invio il primo waypoint nel buffer se non sono in attesa di un ack
-		if(firstSent == false) {
-			firstSent = true;
-			return ExecuteNextMove(moveMsgBuffer.front());
-		}
-	}
-	else 
-	{
-	  return nullptr; // Cosa e'?
-	}
-
-	return this;
+  return this;
 }
 
-State* MoveCommandState::ExecuteNextMove(const edo_core_msgs::MovementCommand& msg) {
+void MoveCommandState::ExecuteNextMove(const edo_core_msgs::MovementCommand& msg) {
 
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
+  SubscribePublish* SPInstance = SubscribePublish::getInstance();
 
-	// Eseguo il comando
-	SPInstance->MoveMsg(msg);
-	return this;
+  // Eseguo il comando
+  SPInstance->MoveMsg(msg);
+  return;
 }
 
 State* MoveCommandState::StartMove(State* state, const edo_core_msgs::MovementCommand& msg) {
 
-	previousState = state;
+  previousState = state;
 
-	return HandleMove(msg);
+  return HandleMove(msg);
+}
+
+State* MoveCommandState::StartAck(State* state, const edo_core_msgs::MovementFeedback& ack) {
+
+  previousState = state;
+
+  return HandleMoveAck(ack);
 }
 
 bool MoveCommandState::MessageIsValid(const edo_core_msgs::MovementCommand& msg) {
@@ -272,11 +414,14 @@ bool MoveCommandState::InternalStateIsValid(uint8_t moveCommand){
   return true;
 }
 
-void MoveCommandState::SendMovementAck(const MESSAGE_FEEDBACK& ackType, int8_t data){
+void MoveCommandState::SendMovementAck(const MESSAGE_FEEDBACK& ackType, int8_t data, int asi_line){
 
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
-	edo_core_msgs::MovementFeedback ack;
-	ack.type = ackType;
-	ack.data = data;
-	SPInstance->MoveAck(ack);
+  SubscribePublish* SPInstance = SubscribePublish::getInstance();
+  edo_core_msgs::MovementFeedback ack;
+  ack.type = ackType;
+  ack.data = data;
+#if ENABLE_MINIMAL_MCS_PRINTFS
+  printAck(ack,"Send Ack To Bridge",asi_line);
+#endif
+  SPInstance->MoveAck(ack);
 }

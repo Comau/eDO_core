@@ -55,9 +55,9 @@ ros::Publisher bridge_jog_publisher;
 // This is the topic where the bridge node publishes init commands
 ros::Publisher bridge_init_publisher;
 // This is the service where the node receives the joints state
-ros::Subscriber machine_bridge_jnt_state_subscriber;
+// ros::Subscriber machine_bridge_jnt_state_subscriber;
 // This is the service where the node receives the state machine state
-ros::Subscriber machine_state_subscriber;
+// ros::Subscriber machine_state_subscriber;
 
 #define DEVELOPMENT_RELEASE (1==0)
 

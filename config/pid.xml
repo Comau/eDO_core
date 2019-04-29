@@ -20,7 +20,7 @@
          <Satc description="Saturation of the current loop" value="100000"/>
          <Maxc description="Maximum value at the end of the current loop" value="12"/>
          <Kffc description="Feed forward gain of the current loop" value="3.000000000000000000"/>
-         <Kt description="Torque constant" value="0.009730000"/>
+         <Kt description="Torque constant" value="0.400000000"/>
       </Parameters>
    </Joint>
    <Joint id="2">
@@ -43,7 +43,7 @@
          <Satc description="Saturation of the current loop" value="100000"/>
          <Maxc description="Maximum value at the end of the current loop" value="12"/>
          <Kffc description="Feed forward gain of the current loop" value="3.000000000000000000"/>
-         <Kt description="Torque constant" value="0.009730000"/>
+         <Kt description="Torque constant" value="0.900000000"/>
       </Parameters>
    </Joint>
    <Joint id="3">
@@ -66,7 +66,7 @@
          <Satc description="Saturation of the current loop" value="100000"/>
          <Maxc description="Maximum value at the end of the current loop" value="12"/>
          <Kffc description="Feed forward gain of the current loop" value="3.000000000000000000"/>
-         <Kt description="Torque constant" value="0.009730000"/>
+         <Kt description="Torque constant" value="0.700000000"/>
       </Parameters>
    </Joint>
    <Joint id="4">
@@ -89,7 +89,7 @@
          <Satc description="Saturation of the current loop" value="100000"/>
          <Maxc description="Maximum value at the end of the current loop" value="12"/>
          <Kffc description="Feed forward gain of the current loop" value="3.000000000000000000"/>
-         <Kt description="Torque constant" value="0.008530000"/>
+         <Kt description="Torque constant" value="0.300000000"/>
       </Parameters>
    </Joint>
    <Joint id="5">
@@ -112,7 +112,7 @@
          <Satc description="Saturation of the current loop" value="100000"/>
          <Maxc description="Maximum value at the end of the current loop" value="12"/>
          <Kffc description="Feed forward gain of the current loop" value="3.000000000000000000"/>
-         <Kt description="Torque constant" value="0.008530000"/>
+         <Kt description="Torque constant" value="0.400000000"/>
       </Parameters>
    </Joint>
    <Joint id="6">
@@ -135,7 +135,7 @@
          <Satc description="Saturation of the current loop" value="100000"/>
          <Maxc description="Maximum value at the end of the current loop" value="12"/>
          <Kffc description="Feed forward gain of the current loop" value="3.000000000000000000"/>
-         <Kt description="Torque constant" value="0.008530000"/>
+         <Kt description="Torque constant" value="0.200000000"/>
       </Parameters>
    </Joint>
 </Edo>

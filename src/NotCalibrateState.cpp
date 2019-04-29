@@ -76,12 +76,17 @@ State* NotCalibrateState::HandleCalibrate(const edo_core_msgs::JointCalibration&
 }
 
 State* NotCalibrateState::HandleJntState(const edo_core_msgs::JointStateArray& state) {
-	
+	int jointsNum = SPinstance->GetJointsNumber();
+	unsigned long sm_joints_mask;
 	bool allJointsCalibrated = false;
 	
-	for (int i = 0; i < SPinstance->GetJointsNumber(); i++) {
+	if (jointsNum <= 0)
+		return this;
 
-		if ((state.joints_mask & (1 << i)) == (1 << i)) {
+	sm_joints_mask = (unsigned long)state.joints_mask;
+	for (int i = 0; i < jointsNum; i++) {
+
+		if ((sm_joints_mask & (1 << i)) != 0) {
 			if((state.joints[i].commandFlag & (1 << COMMAND_FLAG::UNCALIBRATED)) == 0) {
 				allJointsCalibrated = true;
 			} else {

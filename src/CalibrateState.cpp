@@ -108,19 +108,32 @@ State* CalibrateState::HandleJog(const edo_core_msgs::MovementCommand& move_msg)
 
 State* CalibrateState::HandleMove(const edo_core_msgs::MovementCommand& msg) {
 
-	MoveCommandState* move = MoveCommandState::getInstance();
+#if 0
+  printf ("[CalibrateState,%d] Move Command %c Lin %f\n",__LINE__, msg.move_command, msg.cartesian_linear_speed);
+#endif
+  MoveCommandState* move = MoveCommandState::getInstance();
 
-	// Eseguo il comando...
-	return move->StartMove(this, msg);
+  // Eseguo il comando...
+  return move->StartMove(this, msg);
 }
 
 State* CalibrateState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack) {
 
+#if 0
 	// Invio ack a bridge
 	SubscribePublish* SPInstance = SubscribePublish::getInstance();
 	if(ack.type != F_NEED_DATA)
 		SPInstance->MoveAck(ack);
 	return this;
+#endif
+#if 0
+  printf ("[CalibrateState,%d] Ack:%d Data:%d\n",__LINE__, ack.type, ack.data);
+#endif
+  MoveCommandState* move = MoveCommandState::getInstance();
+
+  // Eseguo il comando...
+  return move->StartAck(this, ack);
+
 }
 
 State* CalibrateState::ackCommand() {

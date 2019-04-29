@@ -20,6 +20,7 @@ from edo_core_msgs.msg import MovementFeedback
 from edo_core_msgs.msg import CartesianPose
 from edo_core_msgs.msg import Point
 from edo_core_msgs.msg import Frame
+from edo_core_msgs.msg import JointInit
 
 from edo_core_msgs.srv import ControlSwitch
 
@@ -27,6 +28,7 @@ from parse import parse
 
 algo_jnt_ctrl = rospy.Publisher('algo_jnt_ctrl', JointControlArray, queue_size=1)
 machine_move = rospy.Publisher('machine_move', MovementCommand, queue_size=1)
+machine_init = rospy.Publisher('machine_init', JointInit, queue_size=1)
 
 waitme = 0
 def callback_algo_movement_ack(ack):
@@ -47,6 +49,12 @@ def callback_bridge_c5g(val):
     else:
         startc5g = 0
 
+def is_number(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
 
 rospy.init_node('c5g', anonymous=True)
 rate = rospy.Rate(100) # 100hz
@@ -71,6 +79,8 @@ if __name__ == '__main__':
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect(("10.42.0.40", 8889))
+        # for the vm handling we have to use the address below and comment out the address above
+        #s.connect(("192.168.56.2", 8889))
 
         s.send("<CONNECTION_OPEN>")
         data = s.recv(1024)
@@ -102,6 +112,10 @@ if __name__ == '__main__':
 
         # publish move
         machine_move.publish(mmmsg)
+
+        imsg = JointInit(3, 63, 10.0)
+        # publish init to remove collision 
+        machine_init.publish(imsg)
         
         while waitme == 0:
             time.sleep(1)
@@ -119,16 +133,26 @@ if __name__ == '__main__':
             parsed = parse("<GET_ARM_JNT;1;{};{};{};{};{};{};{};{};{};{}>", data).fixed
             # print(parsed)
             # print(parse("<GET_ARM_JNT;{};{};{};{};{};{};{};{};{};{}>", data).fixed)
-            joints = [
-            float(parsed[0]),
-            float(parsed[1]),
-            float(parsed[2]),
-            float(parsed[3]),
-            float(parsed[4]),
-            float(parsed[5]),
-            float(parsed[6])
-            ]
-            #joints = [1, 2, 3, 4, 5, 6]
+            if is_number(parsed[6]) :
+                joints = [
+                float(parsed[0]),
+                float(parsed[1]),
+                float(parsed[2]),
+                float(parsed[3]),
+                float(parsed[4]),
+                float(parsed[5]),
+                float(parsed[6])
+                ]
+            else :
+                joints = [
+                float(parsed[0]),
+                float(parsed[1]),
+                float(parsed[2]),
+                float(parsed[3]),
+                float(parsed[4]),
+                float(parsed[5])
+                ]
+                
             #print(joints)
             ctrlMsg = JointControlArray()
             ctrlMsg.size = len(joints)
