@@ -131,8 +131,11 @@ printf ("[HandleMoveAck,%d] Data %d to Bridge\n",__LINE__,ack.data);
     if (internalState == INTERNAL_STATE::IDLE)
     {
       // Invio ad algorithm il nuovo messagggio (se esiste)
-      if (moveMsgBuffer.empty())
+      if ( (moveMsgBuffer.empty()) && (_algorithm_state != ALGORITHM_STATE::MOVING) )
         return previousState;
+	  else if ( (moveMsgBuffer.empty()) && (_algorithm_state == ALGORITHM_STATE::MOVING) )
+		return this;
+	
       ExecuteNextMove(moveMsgBuffer.front());
 #if ENABLE_MINIMAL_MCS_PRINTFS
 printf ("[MoveCommandState,%d] ENM MCS:%d send to ALGO\n",__LINE__,moveMsgBuffer.size());
@@ -346,17 +349,16 @@ printf ("[HandleMove,%d] Internal state %d Move Command %c Cosa e'?\n",__LINE__,
 
 void MoveCommandState::ExecuteNextMove(const edo_core_msgs::MovementCommand& msg) {
 
-  SubscribePublish* SPInstance = SubscribePublish::getInstance();
-
-  // Eseguo il comando
-  SPInstance->MoveMsg(msg);
-  return;
+	SubscribePublish* SPInstance = SubscribePublish::getInstance();
+	
+	// Eseguo il comando
+	SPInstance->MoveMsg(msg);
+	return;
 }
 
 State* MoveCommandState::StartMove(State* state, const edo_core_msgs::MovementCommand& msg) {
 
   previousState = state;
-
   return HandleMove(msg);
 }
 
@@ -423,5 +425,6 @@ void MoveCommandState::SendMovementAck(const MESSAGE_FEEDBACK& ackType, int8_t d
 #if ENABLE_MINIMAL_MCS_PRINTFS
   printAck(ack,"Send Ack To Bridge",asi_line);
 #endif
+
   SPInstance->MoveAck(ack);
 }

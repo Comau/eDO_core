@@ -110,6 +110,7 @@ void Edo_Recovery_Node::movementCallback(edo_core_msgs::JointControlArray msg)
         {
           mItemP->dv[i].position = msg.joints[i].position;
           mItemP->dv[i].velocity = msg.joints[i].velocity;
+		  //mItemP->dv[i].velocity = msg.joints[i].R_rasp;
           mItemP->dv[i].current = msg.joints[i].current;
         }  
         targetlist_.push_back(*mItemP);
@@ -146,6 +147,7 @@ void Edo_Recovery_Node::statusCallback(edo_core_msgs::JointStateArray msg)
         {
           mItemP->dv[i].position = msg.joints[i].position;
           mItemP->dv[i].velocity = msg.joints[i].velocity;
+		  //mItemP->dv[i].velocity = msg.joints[i].R_jnt;
           mItemP->dv[i].current = msg.joints[i].current;
         }  
         quotelist_.push_back(*mItemP);

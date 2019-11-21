@@ -57,6 +57,9 @@ class SystemCmdNode():
             if len(data) == 2:
                 psk = base64.b64encode(data[1])
             return SystemCommandSrvResponse('{} {}'.format(ssid,psk))
+        elif req.command == 5:
+            os.system("sudo shutdown -h now")
+            return SystemCommandSrvResponse('')
         return SystemCommandSrvResponse('not implemented')
 
 

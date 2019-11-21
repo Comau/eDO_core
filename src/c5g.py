@@ -70,6 +70,7 @@ if __name__ == '__main__':
     while True:
         while startc5g == 0:
             time.sleep(1)
+            waitme = 0
 
         print("enter slave mode")
 
@@ -78,7 +79,12 @@ if __name__ == '__main__':
         #msg.size = 10
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(("10.42.0.40", 8889))
+
+        try:
+            s.connect(("10.42.0.40", 8889))
+        except:
+            startc5g = 0
+            continue
         # for the vm handling we have to use the address below and comment out the address above
         #s.connect(("192.168.56.2", 8889))
 
@@ -92,28 +98,39 @@ if __name__ == '__main__':
         data = s.recv(1024)
         parsed = parse("<GET_ARM_JNT;1;{};{};{};{};{};{};{};{};{};{}>", data).fixed
 
-        joints = [
-                float(parsed[0]),
-                float(parsed[1]),
-                float(parsed[2]),
-                float(parsed[3]),
-                float(parsed[4]),
-                float(parsed[5])
-                ]
+        if is_number(parsed[6]) :
+            joints = [
+            float(parsed[0]),
+            float(parsed[1]),
+            float(parsed[2]),
+            float(parsed[3]),
+            float(parsed[4]),
+            float(parsed[5]),
+            float(parsed[6])
+            ]
+            bit_flag = 127
+        else :
+            joints = [
+            float(parsed[0]),
+            float(parsed[1]),
+            float(parsed[2]),
+            float(parsed[3]),
+            float(parsed[4]),
+            float(parsed[5])
+            ]
+            bit_flag = 63
 
         #machine_move_pub = rospy.Publisher('machine_move', MovementCommand)
         #print mmmsg
         
         ros_cartesian_pose = CartesianPose(0.0,0.0,0.0,0.0,0.0,0.0,'')
-        ros_point =  Point(74, ros_cartesian_pose, 63, joints)
+        ros_point =  Point(74, ros_cartesian_pose, bit_flag, joints)
         ros_frame =  Frame(0.0,0.0,0.0,0.0,0.0,0.0)
         mmmsg = MovementCommand(77, 74, 25, 0, 0, 0.0, ros_point, ros_point, ros_frame, ros_frame)
-
-
         # publish move
         machine_move.publish(mmmsg)
 
-        imsg = JointInit(3, 63, 10.0)
+        imsg = JointInit(3, 127, 10.0)
         # publish init to remove collision 
         machine_init.publish(imsg)
         
@@ -122,9 +139,12 @@ if __name__ == '__main__':
 
         #print("after waitme")
         control_switch(1)
-        os.system("kill $(ps aux | grep 'edo_algorithms' | awk '{print $2}')")
-        #print("after control switch")
 
+        try:
+            os.system("kill $(ps aux | grep 'edo_algorithms' | awk '{print $2}')")
+        except:
+            print ("edo_algorithm not running")
+        
         while not rospy.is_shutdown() and startc5g == 1:
             s.send("<GET_ARM_JNT;1>")
             # print(" inviato: <GET_ARM_JNT;1>")
@@ -156,7 +176,7 @@ if __name__ == '__main__':
             #print(joints)
             ctrlMsg = JointControlArray()
             ctrlMsg.size = len(joints)
-            ctrlMsg.joints = [JointControl(i, 0, 0, 0, 0) for i in joints]
+            ctrlMsg.joints = [JointControl(i, 0, 0, 0, 0, 0) for i in joints]
             algo_jnt_ctrl.publish(ctrlMsg)
             rate.sleep()
 

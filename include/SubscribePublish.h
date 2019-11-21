@@ -50,8 +50,10 @@
 #include "edo_core_msgs/MachineState.h"
 #include "edo_core_msgs/NodeSwVersionArray.h"
 #include "edo_core_msgs/LoadConfigurationFile.h"
-#include "edo_core_msgs/CollisionFromAlgoToState.h"
+#include "edo_core_msgs/BrakesCheckAck.h"
+#include "edo_core_msgs/AppStateArray.h"
 #include <std_msgs/UInt8.h>
+#include <std_msgs/Bool.h>
 
 #include "StateManager.h"
 
@@ -62,10 +64,6 @@ private:
     ros::NodeHandle node_obj;
     ros::Timer machineStateTimer;
     void timerMachineStateCallback(const ros::TimerEvent& event);
-	
-	//unbrake and recovery timer: during the unbrake and the recovery don't check the collision (11 sec)
-	ros::Timer collTimer;
-	void unbrakeTimerCallback(const ros::TimerEvent& event);
 	
   	// -------------- TOPIC FROM/TO BRIDGE NODE --------------
 	// This is the topic where the bridge node publishes reset command
@@ -80,14 +78,14 @@ private:
 	ros::Subscriber bridge_jog_subscriber;
 	// This is the topic where the bridge node publishes init commands
 	ros::Subscriber bridge_init_subscriber;
-	// This is the service where the node publishes the joints state
-  	ros::Publisher machine_bridge_jnt_state_publisher;
 	// This is the service where the node publishes the its state
   	ros::Publisher machine_state_publisher;
   	// This is the topic where the node publishes the move command ack
   	ros::Publisher machine_move_ack_publisher;
   	// This is the service server where the node sends the software version
 	ros::ServiceServer bridge_sw_version_server;
+	// This is the topic where the brakes check is request
+	ros::Publisher app_jnt_state_publisher;
 
 	// -------------- TOPIC FROM/TO ALGORITHM NODE --------------
 	// This is the service where the node receives the number of joints presents in the system
@@ -103,7 +101,7 @@ private:
 	// This is the topic where the node publishes the jog commands
 	ros::Publisher machine_jog_publisher;
 	// This is the topic where the node publishes the load configuration file commands
-  ros::ServiceClient algo_load_configuration_file_client;
+    ros::ServiceClient algo_load_configuration_file_client;
 
 	// -------------- TOPIC FROM/TO USB/CAN MODULE --------------
 	// Topics for command CALIBRATE / RESET / CONFIGURATION
@@ -113,8 +111,6 @@ private:
 	ros::Publisher machine_jnt_config_publisher;
 	// This is the topic where the node calibrates the joints
 	ros::Publisher machine_jnt_calib_publisher;
-	// This is the topic where the node publishes the init commands
-	ros::Publisher machine_init_publisher;
 	// This is the topic where the node sends the joints state
 	ros::Subscriber usb_jnt_state_subscriber;
 	// This is the topic where the usb node sends error
@@ -125,7 +121,9 @@ private:
 	// -------------- TOPIC FROM RECOVERY NODE --------------
 	ros::Subscriber recovery_edo_error_subscriber;
 	
-
+	// -------------- TOPIC FROM/TO TABLET CHECK NODE ---------------
+	ros::Subscriber tablet_ACK_subscriber;
+	
 	StateManager manager;
 
 	SubscribePublish();
@@ -136,7 +134,8 @@ private:
 
 	int jointsNumber;
 	uint64_t maskedJoints;
-  uint32_t machineStateUpdate;
+    uint32_t machineStateUpdate;
+	
 public:
 
 	// Singleton getInstance
@@ -150,10 +149,10 @@ public:
 	void MoveMsg(const edo_core_msgs::MovementCommand& msg);
 	void MoveAck(const edo_core_msgs::MovementFeedback& ack);
 	void AlgorithmStatusMsg(const edo_core_msgs::JointStateArray& msg);
-	void BridgeStatusMsg(const edo_core_msgs::JointStateArray& msg);
+	void BridgeStatusMsg(const edo_core_msgs::AppStateArray& msg);
 	void MachineStateMsg(const edo_core_msgs::MachineState& msg);
 	void MachineSwVersionMsg(const std_msgs::UInt8& msg);
-  void LoadConfigurationFile();
+    void LoadConfigurationFile();
 
 	int GetJointsNumber();
 	uint64_t GetMaskedJoints();
@@ -163,6 +162,11 @@ public:
 
 	void ackTimeout(State* previous);
 	void moveTimeout(State* previous);
+	
+	// This is the topic used to customize collision thresholds
+	ros::Publisher algo_coll_thr_publisher;
+	// This is the topic where the node publishes the init commands
+	ros::Publisher machine_init_publisher;
 };
 
 #endif /* EDO_CORE_PKG_SRC_SUBSCRIBEPUBLISH_H_ */

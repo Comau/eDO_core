@@ -44,7 +44,7 @@
 class MoveCommandState: public State  {
 public:
   static MoveCommandState* getInstance();
-  void getCurrentState();
+  void   getCurrentState();
   State* HandleMove(const edo_core_msgs::MovementCommand& msg);
   void   ExecuteNextMove(const edo_core_msgs::MovementCommand& msg);
   State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);

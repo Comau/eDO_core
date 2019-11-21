@@ -110,7 +110,9 @@ set( SOURCE_STATE_MACHINE src/edo_state_machine_node.cpp
 						  src/JogState.cpp
 						  src/MoveCommandState.cpp
 						  src/ErrorState.cpp
-						  src/BrakeState.cpp)
+						  src/BrakeState.cpp
+						  src/BrakesCheckState.cpp
+						  src/MoveTestState.cpp)
 
 # edo_recovery node
 add_executable(edo_recovery src/edo_recovery_node.cpp )
@@ -153,6 +155,11 @@ target_link_libraries(edo_c5g ${catkin_LIBRARIES})
 add_executable(edo_moveit_fake src/edo_moveit_fake_node.cpp)
 add_dependencies(edo_moveit_fake ${catkin_EXPORTED_TARGETS})
 target_link_libraries(edo_moveit_fake ${catkin_LIBRARIES})
+
+# edo_tablet_check node
+add_executable(edo_tablet_check src/edo_tablet_check_node.cpp src/TabletCheck.cpp)
+add_dependencies(edo_tablet_check ${catkin_EXPORTED_TARGETS})
+target_link_libraries(edo_tablet_check ${catkin_LIBRARIES})
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations

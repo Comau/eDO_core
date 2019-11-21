@@ -37,6 +37,7 @@
 #define STATE_H_
 
 #include "std_msgs/String.h"
+#include "std_msgs/Int8.h"
 #include "edo_core_msgs/JointStateArray.h"
 #include "edo_core_msgs/JointCalibration.h"
 #include "edo_core_msgs/JointReset.h"
@@ -52,14 +53,16 @@
 #define STATE_MACHINE_DEVELOPMENT_RELEASE (1==0)
 
 enum MACHINE_CURRENT_STATE {
-	COMMAND_STATE = 255, /* Stato temporaneno quando c'è un comando in esecuzione */
-	INIT = 0, /* Stato iniziale */
-	NOT_CALIBRATE = 1, /* macchina non calibrata */
-	CALIBRATE = 2, /* macchina calibrata */
-	MOVE = 3, /* macchina in esecuzione di una move */
-	JOG = 4, /* macchina in esecuzione di un jog */
-	MACHINE_ERROR = 5, /* macchina in stato di error e in attesa  di un riavvio */
-	BRAKED = 6 /* brake active, no motor power supply */
+	COMMAND_STATE = 255, 	/* Stato temporaneno quando c'è un comando in esecuzione */
+	INIT = 0, 				/* Stato iniziale */
+	NOT_CALIBRATE = 1, 		/* macchina non calibrata */
+	CALIBRATE = 2, 			/* macchina calibrata */
+	MOVE = 3, 				/* macchina in esecuzione di una move */
+	JOG = 4, 				/* macchina in esecuzione di un jog */
+	MACHINE_ERROR = 5, 		/* macchina in stato di error e in attesa  di un riavvio */
+	BRAKED = 6, 			/* brake active, no motor power supply */
+	BRAKES_CHECK = 7, 		/* check state for the brakes: brakes active and motor on! */
+	MOVE_TEST = 8			/* */
 };
 
 enum MACHINE_OPCODE {
@@ -85,9 +88,22 @@ enum COMMAND_FLAG {
 	COLLISION = 4,          /* bit 4 - Rilevata collisione */
 	H_BRIDGE_DOWN = 5,      /* bit 5 - ponte h aperto - no potenza motori */
 	OVERCURRENT = 6,        /* bit 6 -sovracorrente */
-	UNCALIBRATED = 7,       /* bit 7 - giunto non calibrato */
+	UNCALIBRATED = 7        /* bit 7 - giunto non calibrato */
 };
-	
+
+enum ALGORITHM_STATE {
+	UNINITIALIZED = 0,
+	INITIALIZED = 1,
+	MOVING = 2,
+	WAITING = 3,
+	BLOCKED = 4,
+	FINISHED = 5,
+	PAUSE = 6,
+	RECOVERY = 7,
+	HOLD = 8,
+	SWITCHED_OFF = 9
+};
+
 class State {
 public:
 	State();
@@ -105,12 +121,17 @@ public:
 	virtual State* HandleJntVersion(bool timeout);
 
 	const uint8_t & getMachineCurrentState();
-
+	int _algorithm_state;
+	
+private:
+	ros::NodeHandle node_obj;
+	void AlgorithmStateCallback(const std_msgs::Int8 msg);
+	
 protected:
 
 	uint8_t machineCurrentState;
 	uint32_t machineOpcode;
-
+	
 };
 
 #endif /* STATE_H_ */

@@ -42,11 +42,13 @@
 #include "edo_core_msgs/JointCalibration.h"
 #include "edo_core_msgs/JointConfigurationArray.h"
 #include "edo_core_msgs/JointReset.h"
+#include "edo_core_msgs/CollisionThreshold.h"
 #include "edo_core_msgs/MovementCommand.h"
 #include "edo_core_msgs/MovementFeedback.h"
 #include "edo_core_msgs/JointFwVersionArray.h"
 #include "edo_core_msgs/SoftwareVersion.h"
-#include "edo_core_msgs/CollisionFromAlgoToState.h"
+#include "edo_core_msgs/CollisionAlgoToState.h"
+#include <std_msgs/Bool.h>
 
 #include "State.h"
 
@@ -71,12 +73,15 @@ public:
 	const uint32_t & getMachineOpcode();
 	bool getSwVersion(edo_core_msgs::SoftwareVersion::Request &req, edo_core_msgs::SoftwareVersion::Response &res);
 	bool getInfo(std::string& hwinfo, std::string& swinfo);
+	void HB_fail_Callback(std_msgs::Bool msg);
+	void HandleBrakesCheck(std_msgs::Bool msg);
 	
-	void HandleAlgoCollision(const edo_core_msgs::CollisionFromAlgoToState& msg);
-	void set_underVoltage_Timer_true();
-	void set_underVoltage_Timer_false();
+	void HandleAlgoCollision(const edo_core_msgs::CollisionAlgoToState& msg);
 	
 	ros::Timer timerJointVersion;
+	
+	ros::Subscriber brakes_check_start_subscriber;
+	ros::Publisher brakes_check_ack_publisher;
 	
 private:
 
@@ -89,8 +94,9 @@ private:
 	void timerJointVersionCallback(const ros::TimerEvent& event);
 	void setMachineOpcode(const uint8_t bit, const bool set);
 	
-	void unbrakeTimerCallback(const ros::TimerEvent& event);
-	
+	void send_BrakeOn();
+	void incrementalMoveCreation(int move1, int move2, int move3);
+		
 	State *current;
 	std::vector<Joint> joints;
 	std::string usbVersion;
@@ -98,8 +104,20 @@ private:
 	ros::Timer timerJointState;
 	uint32_t machineOpcode;
 	
-	bool underVoltage_Timer;
-	bool underVoltage_Algo;
+	bool    underVoltage_Algo;
+	uint8_t jnt_coll_mask;
+	
+	bool    _tabletFail;
+	
+	bool    bc_flag;
+	bool    bc_return_home;
+	int     bc_move1;
+	int     bc_move2;
+	int     bc_move3;
+	int     bc_jnt1;
+	int     bc_jnt2;
+	int     bc_jnt3;
+	uint8_t bc_mask;
 };
 
 #endif /* EDO_CORE_PKG_SRC_STATEMANAGER_H_ */
