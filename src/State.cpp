@@ -36,89 +36,89 @@
 #include "State.h"
 #include "SubscribePublish.h"
 
-State::State() 
+State::State()
 {
-	// TODO Auto-generated constructor stub
-	//machineCurrentState = MACHINE_CURRENT_STATE::INIT;
-	//machineOpcode = 0;
-	ros::Subscriber algorithm_state_subscriber = node_obj.subscribe("/algorithm_state",10, &State::AlgorithmStateCallback, this);
+  // TODO Auto-generated constructor stub
+  //machineCurrentState = MACHINE_CURRENT_STATE::INIT;
+  //machineOpcode = 0;
+  ros::Subscriber algorithm_state_subscriber = node_obj.subscribe("/algorithm_state",10, &State::AlgorithmStateCallback, this);
 }
 
-State::~State() 
+State::~State()
 {
-	// TODO Auto-generated destructor stub
+  // TODO Auto-generated destructor stub
 }
 
-State* State::HandleJntState(const edo_core_msgs::JointStateArray& state) 
+State* State::HandleJntState(const edo_core_msgs::JointStateArray& state)
 {
-	return this;
+  return this;
 }
 
-State* State::HandleCalibrate(const edo_core_msgs::JointCalibration& joints) 
+State* State::HandleCalibrate(const edo_core_msgs::JointCalibration& joints)
 {
-	ROS_INFO("Calibrate Command not available in current state");
-	getCurrentState();
-	return this;
+  ROS_INFO("Calibrate Command not available in current state");
+  getCurrentState();
+  return this;
 }
 
-State* State::HandleReset(const edo_core_msgs::JointReset mask) 
+State* State::HandleReset(const edo_core_msgs::JointReset mask)
 {
-	ROS_INFO("Reset Command not available in current state");
-	getCurrentState();
-	return this;
+  ROS_INFO("Reset Command not available in current state");
+  getCurrentState();
+  return this;
 }
 
-State* State::HandleConfig(const edo_core_msgs::JointConfigurationArray& joints) 
+State* State::HandleConfig(const edo_core_msgs::JointConfigurationArray& joints)
 {
-	ROS_INFO("Configure Command not available in current state");
-	getCurrentState();
-	return this;
+  ROS_INFO("Configure Command not available in current state");
+  getCurrentState();
+  return this;
 }
 
-State* State::HandleInit(const edo_core_msgs::JointInit mask) 
+State* State::HandleInit(const edo_core_msgs::JointInit mask)
 {
-	ROS_INFO("Init Command not available in current state");
-	getCurrentState();
-	return this;
+  ROS_INFO("Init Command not available in current state");
+  getCurrentState();
+  return this;
 }
 
-State* State::HandleMove(const edo_core_msgs::MovementCommand& msg) 
+State* State::HandleMove(const edo_core_msgs::MovementCommand& msg)
 {
-	ROS_INFO("Move Command not available in current state");
-	getCurrentState();
-	return this;
+  ROS_INFO("Move Command not available in current state");
+  getCurrentState();
+  return this;
 }
 
-State* State::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack) 
+State* State::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack)
 {
-	ROS_INFO("Received a MovementFeedback in a NOT Movement State");
-	getCurrentState();
-	return this;
+  ROS_INFO("Received a MovementFeedback in a NOT Movement State");
+  getCurrentState();
+  return this;
 }
 
-State* State::HandleJog(const edo_core_msgs::MovementCommand& msg) 
+State* State::HandleJog(const edo_core_msgs::MovementCommand& msg)
 {
-	ROS_INFO("Jog Command not available in current state");
-	getCurrentState();
-	return this;
+  ROS_INFO("Jog Command not available in current state");
+  getCurrentState();
+  return this;
 }
 
-State* State::ackCommand() 
+State* State::ackCommand()
 {
-	return this;
+  return this;
 }
 
 State* State::HandleJntVersion(bool timeout)
 {
-	return this;
+  return this;
 }
 
-const uint8_t & State::getMachineCurrentState() {
-
-	return machineCurrentState;
-}
-
-void State::AlgorithmStateCallback( const std_msgs::Int8 msg )
+const uint8_t & State::getMachineCurrentState()
 {
-	_algorithm_state = msg.data;
+  return machineCurrentState;
+}
+
+void State::AlgorithmStateCallback(const std_msgs::Int8 msg)
+{
+  _algorithm_state = msg.data;
 }

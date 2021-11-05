@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+﻿cmake_minimum_required(VERSION 2.8.3)
 project(edo_core_pkg)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
@@ -160,6 +160,12 @@ target_link_libraries(edo_moveit_fake ${catkin_LIBRARIES})
 add_executable(edo_tablet_check src/edo_tablet_check_node.cpp src/TabletCheck.cpp)
 add_dependencies(edo_tablet_check ${catkin_EXPORTED_TARGETS})
 target_link_libraries(edo_tablet_check ${catkin_LIBRARIES})
+
+# edo_calib_counter node
+add_executable(edo_calib_counter src/calib_counter_node.cpp src/CalibCounter.cpp)
+add_dependencies(edo_calib_counter ${catkin_EXPORTED_TARGETS})
+target_link_libraries(edo_calib_counter ${catkin_LIBRARIES})
+
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations

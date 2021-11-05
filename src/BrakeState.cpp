@@ -47,55 +47,57 @@ BrakeState* BrakeState::instance = NULL;
 
 BrakeState::BrakeState() {
 
-	machineCurrentState = MACHINE_CURRENT_STATE::BRAKED;
-	SPinstance = SubscribePublish::getInstance();
+  machineCurrentState = MACHINE_CURRENT_STATE::BRAKED;
+  SPinstance = SubscribePublish::getInstance();
 }
 
-BrakeState* BrakeState::getInstance() {
+BrakeState* BrakeState::getInstance()
+{
+  if (instance == NULL) 
+  {
+    instance = new BrakeState();
+  }
 
-	if (instance == NULL) {
-		instance = new BrakeState();
-	}
-
-	return instance;
+  return instance;
 }
 
-void BrakeState::getCurrentState() {
-
-	ROS_INFO("Current State is: BRAKED");
+void BrakeState::getCurrentState()
+{
+  ROS_INFO("Current State is: BRAKED");
 }
 
-State* BrakeState::HandleReset(const edo_core_msgs::JointReset mask) {
+State* BrakeState::HandleReset(const edo_core_msgs::JointReset mask)
+{
+  
+  CommandState* command = CommandState::getInstance();
 
-        CommandState* command = CommandState::getInstance();
-
-        command->ExecuteCommand(this, mask);
-
-        int fd = open("/edo/k3fifo", O_WRONLY);
-        if (fd != 0)
-        {
-          write(fd, "u\n", 2);
-          close(fd);
-          ROS_INFO("brake state send reset");
-        }
-        else
-        {
-          ROS_ERROR("brake state failure opening k3fifo");
-        }
-        return command;
+  command->ExecuteCommand(this, mask);
+  
+  int fd = open("/edo/k3fifo", O_WRONLY);
+  if (fd != 0)
+  {
+    write(fd, "u\n", 2);
+    close(fd);
+    ROS_INFO("brake state send reset");
+  }
+  else
+  {
+    ROS_ERROR("brake state failure opening k3fifo");
+  }  
+  return command;
 }
 
-State* BrakeState::ackCommand() {
-
-	machineCurrentState = MACHINE_CURRENT_STATE::BRAKED;
-	ROS_INFO("brake state rx ack");
-	return NotCalibrateState::getInstance();
+State* BrakeState::ackCommand()
+{
+  machineCurrentState = MACHINE_CURRENT_STATE::BRAKED;
+  ROS_INFO("brake state rx ack");
+  return NotCalibrateState::getInstance();
 }
 
-State* BrakeState::HandleMove(const edo_core_msgs::MovementCommand& msg) {
-
-#if 0
-printf ("[BrakeState,%d] Move Command %c Lin %f\n",__LINE__, msg.move_command, msg.cartesian_linear_speed);
+State* BrakeState::HandleMove(const edo_core_msgs::MovementCommand& msg)
+{
+  #if 0
+  printf ("[BrakeState,%d] Move Command %c Lin %f\n",__LINE__, msg.move_command, msg.cartesian_linear_speed);
 
   if ((msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL) && (msg.cartesian_linear_speed < 0.0f))
   {
@@ -104,7 +106,6 @@ printf ("[BrakeState,%d] Move Command %c Lin %f\n",__LINE__, msg.move_command, m
     // Eseguo il comando...
     return move->StartMove(this, msg);
   }
-#endif
+  #endif
   return this;
 }
-

@@ -45,6 +45,7 @@
 #include "edo_core_msgs/MovementFeedback.h"
 #include "edo_core_msgs/JointConfigurationArray.h"
 #include "edo_core_msgs/JointsNumber.h"
+#include "edo_core_msgs/ToolConfiguration.h"
 #include "edo_core_msgs/JointReset.h"
 #include "edo_core_msgs/JointInit.h"
 #include "edo_core_msgs/MachineState.h"
@@ -52,6 +53,8 @@
 #include "edo_core_msgs/LoadConfigurationFile.h"
 #include "edo_core_msgs/BrakesCheckAck.h"
 #include "edo_core_msgs/AppStateArray.h"
+#include "edo_core_msgs/Pen.h"
+#include "edo_core_msgs/CalibCounter.h"
 #include <std_msgs/UInt8.h>
 #include <std_msgs/Bool.h>
 
@@ -61,112 +64,120 @@ class SubscribePublish
 {
 private:
 
-    ros::NodeHandle node_obj;
-    ros::Timer machineStateTimer;
-    void timerMachineStateCallback(const ros::TimerEvent& event);
-	
-  	// -------------- TOPIC FROM/TO BRIDGE NODE --------------
-	// This is the topic where the bridge node publishes reset command
-	ros::Subscriber bridge_jnt_reset_subscriber;
-	// This is the topic where the bridge node publishes configuration command
-	ros::Subscriber bridge_jnt_config_subscriber;
-	// This is the topic where the bridge node publishes calibration command
-	ros::Subscriber bridge_jnt_calib_subscriber;
-	// This is the topic where the bridge node publishes move commands
-	ros::Subscriber bridge_move_subscriber;
-	// This is the topic where the bridge node publishes jog commands
-	ros::Subscriber bridge_jog_subscriber;
-	// This is the topic where the bridge node publishes init commands
-	ros::Subscriber bridge_init_subscriber;
-	// This is the service where the node publishes the its state
-  	ros::Publisher machine_state_publisher;
-  	// This is the topic where the node publishes the move command ack
-  	ros::Publisher machine_move_ack_publisher;
-  	// This is the service server where the node sends the software version
-	ros::ServiceServer bridge_sw_version_server;
-	// This is the topic where the brakes check is request
-	ros::Publisher app_jnt_state_publisher;
+  ros::NodeHandle node_obj;
+  ros::Timer machineStateTimer;
+  void timerMachineStateCallback(const ros::TimerEvent& event);
+  
+  /* -------------- TOPIC FROM/TO BRIDGE NODE -------------- */
+  // This is the topic where the bridge node publishes reset command
+  ros::Subscriber bridge_jnt_reset_subscriber;
+  // This is the topic where the bridge node publishes configuration command
+  ros::Subscriber bridge_jnt_config_subscriber;
+  // This is the topic where the bridge node publishes calibration command
+  ros::Subscriber bridge_jnt_calib_subscriber;
+  // This is the topic where the bridge node publishes move commands
+  ros::Subscriber bridge_move_subscriber;
+  // This is the topic where the bridge node publishes jog commands
+  ros::Subscriber bridge_jog_subscriber;
+  // This is the topic where the bridge node publishes init commands
+  ros::Subscriber bridge_init_subscriber;
+  ros::Subscriber objects_state_subscriber;
+  // This is the service where the node publishes the its state
+  ros::Publisher machine_state_publisher;
+  // This is the topic where the node publishes the move command ack
+  ros::Publisher machine_move_ack_publisher;
+  // This is the service server where the node sends the software version
+  ros::ServiceServer bridge_sw_version_server;
+  // This are the topics where current position adn velocity are published
+  ros::Publisher app_jnt_state_publisher;
+  ros::Publisher vel_jnt_state_publisher;
+  // This is the topic where pen width, color and state are published
+  ros::Publisher pen_state_publisher;
+  // This is the topic where calib count is displayed
+  ros::Publisher calib_cnt_publisher;
 
-	// -------------- TOPIC FROM/TO ALGORITHM NODE --------------
-	// This is the service where the node receives the number of joints presents in the system
-  	ros::ServiceClient algo_jnt_number_client;
-  	// This is the service where the node receives the movement feedback
-  	ros::Subscriber algo_move_ack_subscriber;	
-	// Message from algo to state
-  	ros::Subscriber algo_collision_subscriber;
-	// This is the service where the node publishes the joints state
-  	ros::Publisher machine_algo_jnt_state_publisher;
-	// This is the topic where the node publishes the movement commands
-	ros::Publisher machine_move_publisher;
-	// This is the topic where the node publishes the jog commands
-	ros::Publisher machine_jog_publisher;
-	// This is the topic where the node publishes the load configuration file commands
-    ros::ServiceClient algo_load_configuration_file_client;
+  /* -------------- TOPIC FROM/TO ALGORITHM NODE -------------- */
+  // This is the service where the node receives the number of joints presents in the system
+  ros::ServiceClient algo_jnt_number_client;
+  ros::ServiceClient algo_tool_configuration_client;
+  // This is the service where the node receives the movement feedback
+  ros::Subscriber algo_move_ack_subscriber; 
+  // Message from algo to state
+  ros::Subscriber algo_collision_subscriber;
+  // This is the service where the node publishes the joints state
+  ros::Publisher machine_algo_jnt_state_publisher;
+  // This is the topic where the node publishes the movement commands
+  ros::Publisher machine_move_publisher;
+  // This is the topic where the node publishes the jog commands
+  ros::Publisher machine_jog_publisher;
+  // This is the topic where the node publishes the load configuration file commands
+  ros::ServiceClient algo_load_configuration_file_client;
 
-	// -------------- TOPIC FROM/TO USB/CAN MODULE --------------
-	// Topics for command CALIBRATE / RESET / CONFIGURATION
-	// This is the topic where the node resets the joints
-	ros::Publisher machine_jnt_reset_publisher;
-	// This is the topic where the node configures the joints
-	ros::Publisher machine_jnt_config_publisher;
-	// This is the topic where the node calibrates the joints
-	ros::Publisher machine_jnt_calib_publisher;
-	// This is the topic where the node sends the joints state
-	ros::Subscriber usb_jnt_state_subscriber;
-	// This is the topic where the usb node sends error
-	ros::Subscriber usb_jnt_version_subscriber;
-  	// This is the topic where the node publishes the software version
-  	ros::Publisher machine_jnt_version_publisher;
-	
-	// -------------- TOPIC FROM RECOVERY NODE --------------
-	ros::Subscriber recovery_edo_error_subscriber;
-	
-	// -------------- TOPIC FROM/TO TABLET CHECK NODE ---------------
-	ros::Subscriber tablet_ACK_subscriber;
-	
-	StateManager manager;
+  /* -------------- TOPIC FROM/TO USB/CAN MODULE -------------- */
+  // Topics for command CALIBRATE / RESET / CONFIGURATION
+  // This is the topic where the node resets the joints
+  ros::Publisher machine_jnt_reset_publisher;
+  // This is the topic where the node configures the joints
+  ros::Publisher machine_jnt_config_publisher;
+  // This is the topic where the node calibrates the joints
+  ros::Publisher machine_jnt_calib_publisher;
+  // This is the topic where the node sends the joints state
+  ros::Subscriber usb_jnt_state_subscriber;
+  // This is the topic where the usb node sends error
+  ros::Subscriber usb_jnt_version_subscriber;
+  // This is the topic where the node publishes the software version
+  ros::Publisher machine_jnt_version_publisher;
+  
+  /* -------------- TOPIC FROM RECOVERY NODE -------------- */
+  ros::Subscriber recovery_edo_error_subscriber;
+  
+  /* -------------- TOPIC FROM/TO TABLET CHECK NODE --------------- */
+  ros::Subscriber tablet_ACK_subscriber;
 
-	SubscribePublish();
-	SubscribePublish(SubscribePublish const&);
-	SubscribePublish& operator=(SubscribePublish const&);
+  // -------------- SERVICE TO WRITE CALIB.LOG FILE --------------
+  ros::ServiceClient write_calib_log_srv;
+  
+  StateManager manager;
 
-	static SubscribePublish* instance;
+  SubscribePublish();
+  SubscribePublish(SubscribePublish const&);
+  SubscribePublish& operator=(SubscribePublish const&);
 
-	int jointsNumber;
-	uint64_t maskedJoints;
-    uint32_t machineStateUpdate;
-	
+  static SubscribePublish* instance;
+
+  int jointsNumber;
+  uint64_t maskedJoints;
+  uint32_t machineStateUpdate;
+  
 public:
 
-	// Singleton getInstance
-	static SubscribePublish* getInstance();
+  // Singleton getInstance
+  static SubscribePublish* getInstance();
 
-	void CalibrationMsg(edo_core_msgs::JointCalibration msg);
-	void ResetMsg(edo_core_msgs::JointReset msg);
-	void ConfigureMsg(edo_core_msgs::JointConfigurationArray msg);
-	void InitMsg(edo_core_msgs::JointInit msg);
-	void JogMsg(const edo_core_msgs::MovementCommand& msg);
-	void MoveMsg(const edo_core_msgs::MovementCommand& msg);
-	void MoveAck(const edo_core_msgs::MovementFeedback& ack);
-	void AlgorithmStatusMsg(const edo_core_msgs::JointStateArray& msg);
-	void BridgeStatusMsg(const edo_core_msgs::AppStateArray& msg);
-	void MachineStateMsg(const edo_core_msgs::MachineState& msg);
-	void MachineSwVersionMsg(const std_msgs::UInt8& msg);
-    void LoadConfigurationFile();
-
-	int GetJointsNumber();
-	uint64_t GetMaskedJoints();
-	void SetMaskedJoints(const uint64_t& mask);
-
-	void movementfeedback_callback(const edo_core_msgs::MovementFeedbackConstPtr msg);
-
-	void ackTimeout(State* previous);
-	void moveTimeout(State* previous);
-	
-	// This is the topic used to customize collision thresholds
-	ros::Publisher algo_coll_thr_publisher;
-	// This is the topic where the node publishes the init commands
-	ros::Publisher machine_init_publisher;
+  void CalibrationMsg(edo_core_msgs::JointCalibration msg);
+  void ResetMsg(edo_core_msgs::JointReset msg);
+  void ConfigureMsg(edo_core_msgs::JointConfigurationArray msg);
+  void InitMsg(edo_core_msgs::JointInit msg);
+  void JogMsg(const edo_core_msgs::MovementCommand& msg);
+  void MoveMsg(const edo_core_msgs::MovementCommand& msg);
+  void MoveAck(const edo_core_msgs::MovementFeedback& ack);
+  void AlgorithmStatusMsg(const edo_core_msgs::JointStateArray& msg);
+  void BridgeStatusMsg(const edo_core_msgs::AppStateArray& msg);
+  void MachineStateMsg(const edo_core_msgs::MachineState& msg);
+  void MachineSwVersionMsg(const std_msgs::UInt8& msg);
+  void LoadConfigurationFile();
+  int GetJointsNumber();
+  int GetToolConfiguration();
+  uint64_t GetMaskedJoints();
+  void SetMaskedJoints(const uint64_t& mask);
+  void movementfeedback_callback(const edo_core_msgs::MovementFeedbackConstPtr msg);
+  void ackTimeout(State* previous);
+  void moveTimeout(State* previous);
+  
+  // This is the topic used to customize collision thresholds
+  ros::Publisher algo_coll_thr_publisher;
+  // This is the topic where the node publishes the init commands
+  ros::Publisher machine_init_publisher;
 };
 
 #endif /* EDO_CORE_PKG_SRC_SUBSCRIBEPUBLISH_H_ */

@@ -50,54 +50,54 @@ ros::Subscriber move_to_target_subscriber;
 
 void UsbJointState(const edo_core_msgs::JointStateArray msg) {
 
-	sensor_msgs::JointState joint_state = sensor_msgs::JointState();
-	
-	for (std::size_t i = 0; i < msg.joints.size(); i++)
-	{
-		std::string name = "axes_" + std::to_string(i+1);
-		joint_state.name.push_back(name);
-		joint_state.position.push_back(angles::from_degrees(msg.joints[i].position));
-		joint_state.velocity.push_back(angles::from_degrees(msg.joints[i].velocity));
-		joint_state.effort.push_back(msg.joints[i].current);
-	}
-	
-	joint_state_publisher.publish(joint_state);
+  sensor_msgs::JointState joint_state = sensor_msgs::JointState();
+  
+  for (std::size_t i = 0; i < msg.joints.size(); i++)
+  {
+    std::string name = "axes_" + std::to_string(i+1);
+    joint_state.name.push_back(name);
+    joint_state.position.push_back(angles::from_degrees(msg.joints[i].position));
+    joint_state.velocity.push_back(angles::from_degrees(msg.joints[i].velocity));
+    joint_state.effort.push_back(msg.joints[i].current);
+  }
+  
+  joint_state_publisher.publish(joint_state);
 }
 
 void MoveToTarget(const sensor_msgs::JointState group_variable_values) {
-	edo_core_msgs::MovementCommand msg;
+  edo_core_msgs::MovementCommand msg;
 
-	msg.move_command = 'M'; // Execute a MOVE statement//
+  msg.move_command = 'M'; // Execute a MOVE statement//
   msg.move_type = 'J'; // E_MOVE_TYPE_JOINT// joint space
   msg.target.data_type = 'J'; // E_MOVE_POINT_JOINT;
-	msg.ovr = 0;
-	for (std::size_t i = 0; i < group_variable_values.position.size(); i++)
-	{
-		msg.target.joints_data.push_back(angles::to_degrees(group_variable_values.position[i])); //float32[] data
-	}
-	//msg.uint8[] movement_attributes
-	
-	bridge_move_publisher.publish(msg);
+  msg.ovr = 0;
+  for (std::size_t i = 0; i < group_variable_values.position.size(); i++)
+  {
+    msg.target.joints_data.push_back(angles::to_degrees(group_variable_values.position[i])); //float32[] data
+  }
+  //msg.uint8[] movement_attributes
+  
+  bridge_move_publisher.publish(msg);
 }
 
 
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv,"edo_moveit_fake");
-	ros::NodeHandle node_obj;
-	ros::Rate loop_rate(100);
-	
-	joint_state_publisher = node_obj.advertise<sensor_msgs::JointState>("/edo_joint_state",10);
-	usb_jnt_state_subscriber = node_obj.subscribe("/usb_jnt_state",10, &UsbJointState);
-	bridge_move_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/bridge_move",10);
-	move_to_target_subscriber = node_obj.subscribe("/joint_move",10, &MoveToTarget);
-	
-	while(ros::ok())
-	{
-	      ros::spinOnce();
-	      loop_rate.sleep();
-	}
+  ros::init(argc, argv,"edo_moveit_fake");
+  ros::NodeHandle node_obj;
+  ros::Rate loop_rate(100);
+  
+  joint_state_publisher = node_obj.advertise<sensor_msgs::JointState>("/edo_joint_state",10);
+  usb_jnt_state_subscriber = node_obj.subscribe("/usb_jnt_state",10, &UsbJointState);
+  bridge_move_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/bridge_move",10);
+  move_to_target_subscriber = node_obj.subscribe("/joint_move",10, &MoveToTarget);
+  
+  while(ros::ok())
+  {
+        ros::spinOnce();
+        loop_rate.sleep();
+  }
 
-	return 0;
+  return 0;
 }
 

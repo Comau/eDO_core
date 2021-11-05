@@ -37,45 +37,46 @@
 #define EDO_CORE_PKG_SRC_COMMANDSTATE_H_
 
 #include "ros/ros.h"
-
 #include "State.h"
 #include "SubscribePublish.h"
 
-class CommandState: public State {
+class CommandState: public State
+{
+  
 public:
 
-	static CommandState* getInstance();
-	void getCurrentState();
-	State* HandleJntState(const edo_core_msgs::JointStateArray& state);
-	void ExecuteCommand(State* state, const edo_core_msgs::JointCalibration& joints);
-	void ExecuteCommand(State* state, const edo_core_msgs::JointReset mask);
-	void ExecuteCommand(State* state, const edo_core_msgs::JointConfigurationArray& joints);
-	void ExecuteCommand(State* state, edo_core_msgs::JointInit msg);
-	void ExecuteCommand(State* state, const std_msgs::UInt8 msg);
+  static CommandState* getInstance();
+  void getCurrentState();
+  State* HandleJntState(const edo_core_msgs::JointStateArray& state);
+  void ExecuteCommand(State* state, const edo_core_msgs::JointCalibration& joints);
+  void ExecuteCommand(State* state, const edo_core_msgs::JointReset mask);
+  void ExecuteCommand(State* state, const edo_core_msgs::JointConfigurationArray& joints);
+  void ExecuteCommand(State* state, edo_core_msgs::JointInit msg);
+  void ExecuteCommand(State* state, const std_msgs::UInt8 msg);
 
 private:
 
-	enum InternalState {
-		NO_WAIT = 0,
-		WAIT_HIGH = 1,
-		WAIT_LOW = 2
-	};
+  enum InternalState {
+    NO_WAIT = 0,
+    WAIT_HIGH = 1,
+    WAIT_LOW = 2
+  };
 
-	CommandState();
-	CommandState(CommandState const&);
-	CommandState& operator=(CommandState const&);
-	void CalibrateJoints();
-	bool isHighAck(const uint8_t & commandFlag);
-	bool commandFlagIsLow(const uint8_t & commandFlag);
-	void timerCallback(const ros::TimerEvent& event);
+  CommandState();
+  CommandState(CommandState const&);
+  CommandState& operator=(CommandState const&);
+  void CalibrateJoints();
+  bool isHighAck(const uint8_t & commandFlag);
+  bool commandFlagIsLow(const uint8_t & commandFlag);
+  void timerCallback(const ros::TimerEvent& event);
 
-	static CommandState* instance;
-	InternalState* currentState;
-	SubscribePublish* SPinstance;
-	State* previousState;
+  static CommandState* instance;
+  InternalState* currentState;
+  SubscribePublish* SPinstance;
+  State* previousState;
 
-	ros::NodeHandle privateNh;
-	ros::Timer timerAck;
+  ros::NodeHandle privateNh;
+  ros::Timer timerAck;
 };
 
 #endif /* EDO_CORE_PKG_SRC_COMMANDSTATE_H_ */

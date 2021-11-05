@@ -47,9 +47,9 @@
 #define NIBBLE_ERROR_MASK       0xF0
 
 enum INIT_MODE {
-	DISCOVERY_MODE = 0,
-	SET_MODE,
-	CANCEL_MODE
+  DISCOVERY_MODE = 0,
+  SET_MODE,
+  CANCEL_MODE
 };
 
 // -------------- TOPIC FROM/TO USB/CAN MODULE --------------
@@ -121,7 +121,7 @@ void ResetReceived(const edo_core_msgs::JointReset msg)
   ROS_INFO("JointReset received: mask [%lu]", mask);
   for(unsigned int jnt_idx = 0; mask != 0; jnt_idx++, mask = mask >> 1)
   {
-  	if(mask & 1)
+    if(mask & 1)
     {
       _state_msg.joints[jnt_idx].position = 0;
       _state_msg.joints[jnt_idx].velocity = 0;

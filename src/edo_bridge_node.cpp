@@ -64,9 +64,9 @@ ros::Publisher bridge_init_publisher;
 void PerformConfiguration()
 {
     edo_core_msgs::JointConfigurationArray config_msg;
-	int size;
-	// edo_core_msgs::JointConfigurationArray msg;
-	config_msg.joints.resize(1); //HARD CODED
+  int size;
+  // edo_core_msgs::JointConfigurationArray msg;
+  config_msg.joints.resize(1); //HARD CODED
 
   fflush(stdin);
   printf("Please provide joint configuration parameters [format single_joint_mask:kp:ti:td:sat:kff:max:kpv:tiv:tdv:satv:kffv:maxv:kpt:tit:tdt:satt:kfft:maxt]: ");
@@ -91,74 +91,74 @@ void PerformConfiguration()
       &config_msg.joints[0].kfft,
       &config_msg.joints[0].maxt);
 
-	if (size != 19)
-	{
-		printf("wrong format\n");
-		return;
-	}
+  if (size != 19)
+  {
+    printf("wrong format\n");
+    return;
+  }
 
-	printf("Send msg\n");
-	bridge_jnt_config_publisher.publish(config_msg);
-	printf("msg sent\n");
+  printf("Send msg\n");
+  bridge_jnt_config_publisher.publish(config_msg);
+  printf("msg sent\n");
 }
 
 void PerformInit() {
-	edo_core_msgs::JointInit init_msg;
-	int size;
+  edo_core_msgs::JointInit init_msg;
+  int size;
 
-	fflush(stdin);
-	printf("Please provide joint init parameters [format mode:joint_mask:reduction_factor]: ");
-	size = scanf("%hhu:%lld:%f",
-			&init_msg.mode,
-			&init_msg.joints_mask,
-			&init_msg.reduction_factor);
+  fflush(stdin);
+  printf("Please provide joint init parameters [format mode:joint_mask:reduction_factor]: ");
+  size = scanf("%hhu:%lld:%f",
+      &init_msg.mode,
+      &init_msg.joints_mask,
+      &init_msg.reduction_factor);
 
 
-	if (size != 3)
-	{
+  if (size != 3)
+  {
 #if DEVELOPMENT_RELEASE
-		printf("wrong format\n");
+    printf("wrong format\n");
 #endif
-		return;
-	}
+    return;
+  }
 
-	bridge_init_publisher.publish(init_msg);
+  bridge_init_publisher.publish(init_msg);
 }
 
 void PerformReset() {
-	edo_core_msgs::JointReset reset_msg;
-	int size;
+  edo_core_msgs::JointReset reset_msg;
+  int size;
 
-	fflush(stdin);
-	printf("Please provide joint reset parameters [format joint_mask]: ");
-	size = scanf("%lld", &reset_msg.joints_mask );
+  fflush(stdin);
+  printf("Please provide joint reset parameters [format joint_mask]: ");
+  size = scanf("%lld", &reset_msg.joints_mask );
 
-	if (size != 1)
-	{
+  if (size != 1)
+  {
 #if DEVELOPMENT_RELEASE
-		printf("wrong format\n");
+    printf("wrong format\n");
 #endif
-		return;
-	}
+    return;
+  }
 
-	bridge_jnt_reset_publisher.publish(reset_msg);
+  bridge_jnt_reset_publisher.publish(reset_msg);
 }
 
 void PerformCalibration() {
-	edo_core_msgs::JointCalibration calib_msg;
-	int size;
+  edo_core_msgs::JointCalibration calib_msg;
+  int size;
 
-	fflush(stdin);
-	printf("Please provide joint calibration parameters [formatjoint_mask]: ");
-	size = scanf("%lld", &calib_msg.joints_mask );
+  fflush(stdin);
+  printf("Please provide joint calibration parameters [formatjoint_mask]: ");
+  size = scanf("%lld", &calib_msg.joints_mask );
 
-	if (size != 1)
-	{
-		printf("wrong format\n");
-		return;
-	}
+  if (size != 1)
+  {
+    printf("wrong format\n");
+    return;
+  }
 
-	bridge_jnt_calib_publisher.publish(calib_msg);
+  bridge_jnt_calib_publisher.publish(calib_msg);
 }
 
 
@@ -266,51 +266,51 @@ void PerformMove() {
 
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv,"edo_bridge");
+  ros::init(argc, argv,"edo_bridge");
 
-	ros::NodeHandle node_obj;
+  ros::NodeHandle node_obj;
 
-	bridge_jnt_reset_publisher = node_obj.advertise<edo_core_msgs::JointReset&>("/bridge_jnt_reset",10);
-	bridge_jnt_config_publisher = node_obj.advertise<edo_core_msgs::JointConfigurationArray&>("/bridge_jnt_config",10);
-	bridge_jnt_calib_publisher = node_obj.advertise<edo_core_msgs::JointCalibration>("/bridge_jnt_calib",10);
-	bridge_move_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/bridge_move",10);
-	bridge_jog_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/bridge_jog",10);
-	bridge_init_publisher = node_obj.advertise<edo_core_msgs::JointInit&>("/bridge_init",10);
-	//machine_bridge_jnt_state_subscriber;
-	//machine_state_subscriber;
+  bridge_jnt_reset_publisher = node_obj.advertise<edo_core_msgs::JointReset&>("/bridge_jnt_reset",10);
+  bridge_jnt_config_publisher = node_obj.advertise<edo_core_msgs::JointConfigurationArray&>("/bridge_jnt_config",10);
+  bridge_jnt_calib_publisher = node_obj.advertise<edo_core_msgs::JointCalibration>("/bridge_jnt_calib",10);
+  bridge_move_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/bridge_move",10);
+  bridge_jog_publisher = node_obj.advertise<edo_core_msgs::MovementCommand>("/bridge_jog",10);
+  bridge_init_publisher = node_obj.advertise<edo_core_msgs::JointInit&>("/bridge_init",10);
+  //machine_bridge_jnt_state_subscriber;
+  //machine_state_subscriber;
 
-	unsigned int command_type;
-	while (ros::ok())
-	{
-		command_type = 9;
-	  	printf("set command type: [0] for init, [1] for config, [2] for reset, [3] for calibration, [4] to jog, [5] to move, [6] to quit:");
-	  	scanf("%d", &command_type);
+  unsigned int command_type;
+  while (ros::ok())
+  {
+    command_type = 9;
+      printf("set command type: [0] for init, [1] for config, [2] for reset, [3] for calibration, [4] to jog, [5] to move, [6] to quit:");
+      scanf("%d", &command_type);
 
-		if(command_type > 6)
-		{
+    if(command_type > 6)
+    {
 #if DEVELOPMENT_RELEASE
-			printf("Unrecognized command\n");
+      printf("Unrecognized command\n");
 #endif
-		}
-		else if(command_type == 0)
-			PerformInit();
-		else if(command_type == 1)
-			PerformConfiguration();
-		else if(command_type == 2)
-			PerformReset();
-		else if(command_type == 3)
-			PerformCalibration();
-		else if(command_type == 4)
-			PerformJog();
-		else if(command_type == 5)
-			PerformMove();
-		else if(command_type == 6) {
+    }
+    else if(command_type == 0)
+      PerformInit();
+    else if(command_type == 1)
+      PerformConfiguration();
+    else if(command_type == 2)
+      PerformReset();
+    else if(command_type == 3)
+      PerformCalibration();
+    else if(command_type == 4)
+      PerformJog();
+    else if(command_type == 5)
+      PerformMove();
+    else if(command_type == 6) {
 #if DEVELOPMENT_RELEASE
-			printf("Exit\n");
+      printf("Exit\n");
 #endif
-			return 0;
-		}
-	}
+      return 0;
+    }
+  }
 
     return 0;
 }

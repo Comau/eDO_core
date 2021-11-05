@@ -38,10 +38,11 @@
 
 #include "ros/ros.h"
 #include <vector>
-
 #include "State.h"
 
-class MoveCommandState: public State  {
+class MoveCommandState: public State 
+{
+
 public:
   static MoveCommandState* getInstance();
   void   getCurrentState();
@@ -79,4 +80,3 @@ private:
 };
 
 #endif /* EDO_CORE_PKG_MOVECOMMANDSTATE_H_ */
-

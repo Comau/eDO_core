@@ -33,12 +33,12 @@
  *      Author: comaudev
  */
 
-#include "edo_core_pkg/AlgorithmManager.hpp"
+#include "AlgorithmManager.hpp"
 
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv,"edo_algorithms");
-	ros::NodeHandle node_obj;
-	AlgorithmManager manager(node_obj);
-	return 0;
+  ros::init(argc, argv,"edo_algorithms");
+  ros::NodeHandle node_obj;
+  AlgorithmManager manager(node_obj);
+  return 0;
 }

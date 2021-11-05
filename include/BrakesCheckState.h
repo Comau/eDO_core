@@ -27,63 +27,32 @@
   either expressed or implied, of the FreeBSD Project.
 */
 /*
- * InitState.h
+ * BrakesCheckState.h
  *
- *  Created on: Jul 12, 2017
+ *  Created on: May 13, 2019
  *      Author: comau
  */
 
-#ifndef EDO_CORE_PKG_INCLUDE_INITSTATE_H_
-#define EDO_CORE_PKG_INCLUDE_INITSTATE_H_
+#ifndef EDO_CORE_PKG_SRC_BRAKESCHECKSTATE_H_
+#define EDO_CORE_PKG_SRC_BRAKESCHECKSTATE_H_
 
 #include "State.h"
-#include "SubscribePublish.h"
-#include <tinyxml.h>
-#include <ros/package.h>
 
-class InitState: public State
+class BrakesCheckState: public State
 {
 
 public:
-
-  static InitState* getInstance();
+  static BrakesCheckState* getInstance();
   void getCurrentState();
-  State* HandleInit(const edo_core_msgs::JointInit mask);
+  State* HandleMove(const edo_core_msgs::MovementCommand& msg);
+  State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
   State* ackCommand();
-  State* HandleJntVersion(bool timeout);
 
 private:
-
-  enum InternalState {
-    WAIT = 0,
-    DISCOVERY = 1,
-    SET = 2,
-    DELETE = 3,
-    MASK_JOINTS = 4,
-    GET_VERSION = 5,
-    GET_VERSION_DONE = 6,
-    SET_PID_PARAM = 7,
-    JOINTS_RESET = 8
-  };
-
-  InitState();
-  InitState(InitState const&);
-  InitState& operator=(InitState const&);
-  void resetState();
-  bool loadConfiguration(edo_core_msgs::JointConfigurationArray & msg, const char* pFilename);
-  void loadConfiguration( TiXmlNode* pParent, edo_core_msgs::JointConfigurationArray & msg, int & count);
-  bool loadAttribute(TiXmlElement* pElement, double & attribute);
-
-  static InitState* instance;
-  InternalState currentState;
-  SubscribePublish* SPinstance;
-  bool* jointInitState;
-  int jointToSet;
-  bool completeDiscovery;
-  uint8_t currentJointVersionID;
-  uint8_t versionRetries;
+  BrakesCheckState();
+  BrakesCheckState(BrakesCheckState const&);
+  BrakesCheckState& operator=(BrakesCheckState const&);
+  static BrakesCheckState* instance;
 };
 
-#define NUM_MAX_JOINTS 7
-
-#endif /* EDO_CORE_PKG_INCLUDE_INITSTATE_H_ */
+#endif

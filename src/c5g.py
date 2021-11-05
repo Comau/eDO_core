@@ -13,20 +13,23 @@ roslib.load_manifest(PACKAGE)
 
 import std_msgs.msg
 
-from edo_core_msgs.msg import JointControl
+#from edo_core_msgs.msg import JointControl
 from edo_core_msgs.msg import MovementCommand
-from edo_core_msgs.msg import JointControlArray
+#from edo_core_msgs.msg import JointControlArray
 from edo_core_msgs.msg import MovementFeedback
 from edo_core_msgs.msg import CartesianPose
 from edo_core_msgs.msg import Point
 from edo_core_msgs.msg import Frame
+from edo_core_msgs.msg import Payload
 from edo_core_msgs.msg import JointInit
+from edo_core_msgs.msg import JointValue
 
 from edo_core_msgs.srv import ControlSwitch
 
 from parse import parse
 
-algo_jnt_ctrl = rospy.Publisher('algo_jnt_ctrl', JointControlArray, queue_size=1)
+#algo_jnt_ctrl = rospy.Publisher('algo_jnt_ctrl', JointControlArray, queue_size=1)
+external_control_publisher = rospy.Publisher('external_control', JointValue, queue_size=1)
 machine_move = rospy.Publisher('machine_move', MovementCommand, queue_size=1)
 machine_init = rospy.Publisher('machine_init', JointInit, queue_size=1)
 
@@ -82,8 +85,10 @@ if __name__ == '__main__':
 
         try:
             s.connect(("10.42.0.40", 8889))
+            print("connected")
         except:
             startc5g = 0
+            print("failed connection")
             continue
         # for the vm handling we have to use the address below and comment out the address above
         #s.connect(("192.168.56.2", 8889))
@@ -94,6 +99,7 @@ if __name__ == '__main__':
         if data != "<CONNECTION_OPEN;OK>":
             exit()
 
+        print("get arm joint")
         s.send("<GET_ARM_JNT;1>")
         data = s.recv(1024)
         parsed = parse("<GET_ARM_JNT;1;{};{};{};{};{};{};{};{};{};{}>", data).fixed
@@ -126,9 +132,11 @@ if __name__ == '__main__':
         ros_cartesian_pose = CartesianPose(0.0,0.0,0.0,0.0,0.0,0.0,'')
         ros_point =  Point(74, ros_cartesian_pose, bit_flag, joints)
         ros_frame =  Frame(0.0,0.0,0.0,0.0,0.0,0.0)
-        mmmsg = MovementCommand(77, 74, 25, 0, 0, 0.0, ros_point, ros_point, ros_frame, ros_frame)
+        ros_payload = Payload(0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0)
+        mmmsg = MovementCommand(77, 74, 35, 0, 0, 0.0, ros_point, ros_point, ros_frame, ros_frame, ros_payload)
         # publish move
         machine_move.publish(mmmsg)
+        print("move msg published")
 
         imsg = JointInit(3, 127, 10.0)
         # publish init to remove collision 
@@ -140,10 +148,10 @@ if __name__ == '__main__':
         #print("after waitme")
         control_switch(1)
 
-        try:
-            os.system("kill $(ps aux | grep 'edo_algorithms' | awk '{print $2}')")
-        except:
-            print ("edo_algorithm not running")
+        # try:
+            # os.system("kill $(ps aux | grep 'edo_algorithms' | awk '{print $2}')")
+        # except:
+            # print ("edo_algorithm not running")
         
         while not rospy.is_shutdown() and startc5g == 1:
             s.send("<GET_ARM_JNT;1>")
@@ -170,19 +178,30 @@ if __name__ == '__main__':
                 float(parsed[2]),
                 float(parsed[3]),
                 float(parsed[4]),
-                float(parsed[5])
+                float(parsed[5]),
+                0
                 ]
                 
             #print(joints)
-            ctrlMsg = JointControlArray()
-            ctrlMsg.size = len(joints)
-            ctrlMsg.joints = [JointControl(i, 0, 0, 0, 0, 0) for i in joints]
-            algo_jnt_ctrl.publish(ctrlMsg)
+            #ctrlMsg = JointControlArray()
+            #ctrlMsg.size = len(joints)
+            #ctrlMsg.joints = [JointControl(i, 0, 0, 0, 0, 0) for i in joints]
+            #algo_jnt_ctrl.publish(ctrlMsg)
+            
+            trgMsg = JointValue()
+            trgMsg.position = joints
+            external_control_publisher.publish(trgMsg)
+            #print("ctrl msg published")
             rate.sleep()
 
         s.send("<CONNECTION_CLOSE>")
         s.close()
-        control_switch(2)
+        
+        imsg = JointInit(3, 127, -1.0)
+        # publish init to restore collision 
+        machine_init.publish(imsg)
+        
+        control_switch(0)
 
         waitme = 0
         print("exit slave mode")

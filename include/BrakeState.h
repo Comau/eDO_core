@@ -41,23 +41,24 @@
 #include "State.h"
 #include "SubscribePublish.h"
 
-class BrakeState: public State {
+class BrakeState: public State
+{
+
 public:
-	static BrakeState* getInstance();
-	void getCurrentState();
-	State* HandleMove(const edo_core_msgs::MovementCommand& msg);
-	State* HandleReset(const edo_core_msgs::JointReset mask);
-	State* ackCommand();
+  static BrakeState* getInstance();
+  void getCurrentState();
+  State* HandleMove(const edo_core_msgs::MovementCommand& msg);
+  State* HandleReset(const edo_core_msgs::JointReset mask);
+  State* ackCommand();
 
 private:
 
+  BrakeState();
+  BrakeState(BrakeState const&);
+  BrakeState& operator=(BrakeState const&);
 
-	BrakeState();
-	BrakeState(BrakeState const&);
-	BrakeState& operator=(BrakeState const&);
-
-	static BrakeState* instance;
-	SubscribePublish* SPinstance;
+  static BrakeState* instance;
+  SubscribePublish* SPinstance;
 };
 
 #endif /* EDO_CORE_PKG_SRC_BRAKESTATE_H_ */

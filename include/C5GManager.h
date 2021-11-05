@@ -41,16 +41,16 @@
 
 class C5GManager
 {
+
 public:
-	C5GManager();
-	
-	void TakeControl();
-	void ReleaseControl();
+  C5GManager();
+  
+  void TakeControl();
+  void ReleaseControl();
 private:
 
-	ros::NodeHandle node_obj;    
-	ros::ServiceClient robot_switch_control_client;
-    
+  ros::NodeHandle node_obj;    
+  ros::ServiceClient robot_switch_control_client;
 };
 
 #endif /* EDO_CORE_PKG_INCLUDE_C5GMANAGER_HPP_ */

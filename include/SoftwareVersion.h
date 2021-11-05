@@ -37,9 +37,8 @@
 #define SOFTWARE_VERSION_H_
 
 #define EDO_SW_MAJOR      3
-#define EDO_SW_MINOR      0
-#define EDO_SW_REVISION   1910
-#define EDO_SW_SVN        876
-
+#define EDO_SW_MINOR      1
+#define EDO_SW_REVISION   2001
+#define EDO_SW_SVN        926
 
 #endif /* SOFTWARE_VERSION_H_ */

@@ -53,6 +53,7 @@
 #include "edo_core_msgs/MovementFeedback.h"
 #include "edo_core_msgs/CartesianPose.h"
 #include "edo_core_msgs/JointsNumber.h"
+#include "edo_core_msgs/ToolConfiguration.h"
 #include "edo_core_msgs/JointsPositions.h"
 #include "edo_core_msgs/DirectKinematics.h"
 #include "edo_core_msgs/InverseKinematics.h"
@@ -65,6 +66,7 @@
 #include "edo_core_msgs/JointConfigurationArray.h"
 #include "edo_core_msgs/JointReset.h"
 #include "edo_core_msgs/JointInit.h"
+#include "edo_core_msgs/JointValue.h"
 #include <std_msgs/Int8.h>
 #include <std_msgs/Bool.h>
 #include "ros/ros.h"
@@ -83,33 +85,35 @@
 #define IDX_STRK_ENP_P   1
 #define IDX_STRK_ENP_N   0
 
-class AlgorithmManager
-{
-public:
-
-#define INTERPOLATION_STEP      2  // GET_NEXT_STEP CALLS PERIOD
-#define INTERPOLATION_TIME_STEP (INTERPOLATION_STEP / 1000.0f)  // Ts in ms
-#define CONTROLLER_FREQUENCY    100 // in Hz
+#define INTERPOLATION_STEP        2  // GET_NEXT_STEP CALLS PERIOD
+#define INTERPOLATION_TIME_STEP   (INTERPOLATION_STEP / 1000.0f)  // Ts in ms
+#define CONTROLLER_FREQUENCY      100 // in Hz
 #define CONTROLLER_PERIOD         (1000.0f / CONTROLLER_FREQUENCY) // A target is produced every 10ms
 #define NR_GET_NEXT_STEP_CALLS    (CONTROLLER_PERIOD / INTERPOLATION_STEP)
 // INTERPOLATION_STEP --> 1  DUE_PER_TS --> 0.002  TS_SQUARE --> 0.000001
 // INTERPOLATION_STEP --> 2  DUE_PER_TS --> 0.004  TS_SQUARE --> 0.000004
 #define DUE_PER_TS                (2.0f * INTERPOLATION_TIME_STEP)  
 #define TS_SQUARE                 (INTERPOLATION_TIME_STEP * INTERPOLATION_TIME_STEP)
-#define ORL_STATUS_IDLE -42
-#define FILTER_STEP             3
-#define N_AX_GRIPPER            6
+#define ORL_STATUS_IDLE           -42
+#define FILTER_STEP               3
+#define N_AX_GRIPPER              6
 
 #define MAX_THRS      1000.0f
 
-#define ZERO_FLOAT      0.0f
-#define ONE_FLOAT     1.0f
-#define TWO_FLOAT     2.0f
-#define PI_GRECO      3.14159265358979f
+#define ZERO_FLOAT        0.0f
+#define ONE_FLOAT         1.0f
+#define TWO_FLOAT         2.0f
+#define PI_GRECO          3.14159265358979f
 #define QUASIZERO_FLOAT   0.00000001f
 
-#define ORL_CIR_VIA   0
+#define ORL_CIR_VIA     0
 #define ORL_CIR_TARGET  1
+
+class AlgorithmManager
+{
+
+public:
+
   enum Mode {
     UNINITIALIZED = 0,
     INITIALIZED = 1,
@@ -140,35 +144,59 @@ public:
     ERR_MAXVELOCITY = 10,
     ERR_FOLLOWING = 11,
     ERR_OVERCURRENT = 12,
+    ERR_UNDERVOLTAGE = 13,
+    ERR_STRKEND = 14,
     STATUS_ERROR_MASK = 0x0070  /* bit 0111 0000 - tre errori di collision, overcurrent, uncalibrated */
   };
-
+  
+  enum TOOL_CONFIG {
+    UNDEFINED = -1,
+    NO_TOOL = 0,
+    GRIPPER = 1,
+    MAX_PAYLOAD =2
+  };
+  
   AlgorithmManager(ros::NodeHandle&);
   ~AlgorithmManager();
-
+  
+  // Public Methods
   void moveCallback(edo_core_msgs::MovementCommandConstPtr);
   void jogCallback(edo_core_msgs::MovementCommandConstPtr);
-  edo_core_msgs::JointControlArray const& getCurrentControl();
   void stateCallback(edo_core_msgs::JointStateArrayConstPtr);
   void updateControl();
-
+  
+  edo_core_msgs::JointControlArray const& getCurrentControl();
+  
 private:
-  ros::Timer timerCalib_;
+  
+  // Algorithm mode
   Mode algorithm_mode_;
+  
+  // ORL variables
   ORL_joint_value current_state_;
   ORL_joint_value target_joint_;
   ORL_joint_value target_joint_via_;
   ORL_joint_value hold_position_;
+  
   ORL_Dynamic_Model hold_current_;
   ORL_Dynamic_Model sx_dyn_mod_;
+  
   ORL_cartesian_position target_cart_;
   ORL_cartesian_position target_cart_via_;
   ORL_cartesian_position base_;
   ORL_cartesian_position tool_;
   ORL_cartesian_position uframe_;
   ORL_cartesian_position p_;
+  
+  ORL_payload_value _tool_inertial_data;
+  
   boost::circular_buffer<ORL_joint_value> interpolation_data_;
+  
+  // Private variables
   double controller_frequency_, state_saturation_threshold_;
+  float strk_[2][ORL_MAX_AXIS];
+  float R_old_[3][3], R_step_[3][3];
+  
   int joints_number_;
   int interpolation_time_step_;
   int jog_target_data_type_;
@@ -176,10 +204,18 @@ private:
   int configurationFileLoaded_;
   int numberSteps_;
   int numberSteps_M42_;
-  float strk_[2][ORL_MAX_AXIS];
   int previousMoveFlyHandle_;
   int idleMoveHandle_;
+  int moveHandle_old;
+  int status_old;
+  int _ORL_error;
+  
+  bool _flag_set;
   uint delay_;
+  unsigned long joints_mask_;
+  unsigned long joints_aux_mask_;
+  uint32_t jointCalib_;
+  
   bool waiting_, jog_carlin_state_, jog_state_;
   bool  noCartPose_;
   bool first_time_;
@@ -190,22 +226,53 @@ private:
   bool pending_cancel_;
   bool moveInProgress_;
   bool moveStopped_;
+  bool _first_braked;
+  
+  // Timers
+  ros::Timer timerCalib_;
   ros::Time start_wait_time_;
   ros::Time start_jog_time_;
   pthread_mutex_t control_mutex_;
-  unsigned long joints_mask_;
-  unsigned long joints_aux_mask_;
-  uint32_t jointCalib_;
+  
+  // Strings
   std::string pkg_path_;
-  float R_old_[3][3], R_step_[3][3];
+  
+  // ROS messages variables
   edo_core_msgs::JointControlArray joints_control_;
   edo_core_msgs::MovementFeedback next_move_request_;
   edo_core_msgs::MovementCommand in_progress_moveCommand_;
+  
+  // Move Lists
   std::list<edo_core_msgs::MovementCommand> msglist_;
   std::list<edo_core_msgs::MovementCommand> msglistJog_;
-    std::list<edo_core_msgs::MovementCommand> MoveCommandMsgListInOrl_;
-  ros::Publisher feedback_publisher_, cartesian_pose_pub_, algorithm_state_pub_, algo_collision_publisher;
-
+  std::list<edo_core_msgs::MovementCommand> MoveCommandMsgListInOrl_;
+  
+  // ROS publishers
+  ros::Publisher feedback_publisher_;
+  ros::Publisher cartesian_pose_pub_;
+  ros::Publisher algorithm_state_pub_;
+  ros::Publisher algo_collision_publisher;
+  ros::Publisher robot_control_publisher;
+  ros::Publisher machine_init_publisher;
+  // ROS subscribers
+  ros::Subscriber move_control_sub;
+  ros::Subscriber jog_control_sub;
+  ros::Subscriber jnt_state_subscriber;
+  ros::Subscriber jnt_calib_subscriber;
+  ros::Subscriber machine_state_subscriber;
+  ros::Subscriber machine_jnt_config_subscriber;
+  ros::Subscriber machine_jnt_reset_subscriber;
+  ros::Subscriber tool_configuration_subscriber;
+  ros::Subscriber coll_thr_subscriber;
+  ros::Subscriber external_control_subscriber;
+  
+  // ROS Services
+  ros::ServiceServer get_jnts_number_srv;
+  ros::ServiceServer get_tool_configuration_srv;
+  ros::ServiceServer loadConfigurationFile_srv;
+  ros::ServiceServer robot_switch_control_server;
+  
+  // Private Methods
   bool moveTrjntFn    (edo_core_msgs::MovementCommand * msg);
   bool moveCarlinFn   (edo_core_msgs::MovementCommand * msg);
   bool moveCarcirFn   (edo_core_msgs::MovementCommand * msg);
@@ -216,63 +283,70 @@ private:
   bool jogCarlinFn    (edo_core_msgs::MovementCommand * msg);
   bool jogStopFn      (edo_core_msgs::MovementCommand * msg);
   bool setReferenceFn (edo_core_msgs::MovementCommand * msg);
-  void calibCallback(edo_core_msgs::JointCalibrationConstPtr msg);
-  void timerCallback(const ros::TimerEvent& event);
-  Mode getAlgorithmMode(void) { return(algorithm_mode_); };
-  void setAlgorithmMode(Mode si_mode, const char *apc_func, int si_line);
-  void initialize (edo_core_msgs::JointStateArrayConstPtr);
-  int setORLMovement(std::vector<int> move_parameters, int movement_type, int point_data_type, int ovr);
-  void setControl(bool bactive);
-  void keepPosition();
   bool manageORLStatus(int const&, const char* service_name);
-  int get_Strk(float strk[2][ORL_MAX_AXIS]);
-  void vZYZm(ORL_cartesian_position p, float R[3][3]);
-  void mvZYZ(float R[3][3], ORL_cartesian_position *p);
-  void vXYZm(ORL_cartesian_position p, float R[3][3]);
-  edo_core_msgs::CartesianPose computeCartesianPose(ORL_joint_value *joint_state);
   bool updateJogCarlin();
   bool getSrvJointsNumber(edo_core_msgs::JointsNumber::Request  &req, edo_core_msgs::JointsNumber::Response &res);
+  bool getSrvToolConfiguration(edo_core_msgs::ToolConfiguration::Request  &req, edo_core_msgs::ToolConfiguration::Response &res);
   bool getDirectKinematics(edo_core_msgs::DirectKinematics::Request  &req, edo_core_msgs::DirectKinematics::Response &res);
   bool getInverseKinematics(edo_core_msgs::InverseKinematics::Request  &req, edo_core_msgs::InverseKinematics::Response &res);
   bool loadConfigurationFile_CB(edo_core_msgs::LoadConfigurationFile::Request  &req, edo_core_msgs::LoadConfigurationFile::Response &res);
-  void feedbackFn();
   bool initializeORL();
+  
+  void calibCallback(edo_core_msgs::JointCalibrationConstPtr msg);
+  void timerCallback(const ros::TimerEvent& event);
+  void setAlgorithmMode(Mode si_mode, const char *apc_func, int si_line);
+  void initialize (edo_core_msgs::JointStateArrayConstPtr);
+  void setControl(bool bactive);
+  void keepPosition();
+  void vZYZm(ORL_cartesian_position p, float R[3][3]);
+  void mvZYZ(float R[3][3], ORL_cartesian_position *p);
+  void vXYZm(ORL_cartesian_position p, float R[3][3]);
+  void feedbackFn();
   void feedbackFn(int type, int data, const char *, int);
-  edo_core_msgs::JointsPositions computeJointValue(edo_core_msgs::CartesianPose cartesian_pose);
-  
-  ros::ServiceServer robot_switch_control_server;
-  bool SwitchControl(edo_core_msgs::ControlSwitch::Request &req, edo_core_msgs::ControlSwitch::Response &res);
-  bool collisionCheck(float vr_CurMis, float vr_CurDyn, int vi_JointIndex, float curr_limit[7]);
-  
-  //------- COLLISION DETECTION ------//
-    int        _curfilt_cnt[6]={0}    ;
-    float _FiltCurDyn_Regr2[6]={0.0f} ;
-    float _FiltCurDyn_Regr1[6]={0.0f} ;
-    float _FiltCurMis_Regr2[6]={0.0f} ;
-    float _FiltCurMis_Regr1[6]={0.0f} ;
-  float curr_limit[7];
-  void algoCollisionThr(edo_core_msgs::CollisionThreshold msg);
-  
-  bool bc_flag;
-  void machineStateCallback(edo_core_msgs::MachineState msg);
-  float CollisionFactor;
-  
   void jntConfigCallback(edo_core_msgs::JointConfigurationArray msg);
   void dynamicModelReset();
+  void externalControlCallback(edo_core_msgs::JointValueConstPtr msg);
+  void externalControlLoop();
+  void switchControlHandler();
+  
+  Mode getAlgorithmMode(void) { return(algorithm_mode_); };
+  
+  int setORLMovement(std::vector<int> move_parameters, int movement_type, int point_data_type, int ovr);
+  int get_Strk(float strk[2][ORL_MAX_AXIS]);
+  
+  edo_core_msgs::CartesianPose computeCartesianPose(ORL_joint_value *joint_state);
+  edo_core_msgs::JointsPositions computeJointValue(edo_core_msgs::CartesianPose cartesian_pose);
+  
+  // Switch Control to TP
+  bool SwitchControl(edo_core_msgs::ControlSwitch::Request &req, edo_core_msgs::ControlSwitch::Response &res);
+  
+  // Collision Detection
+  int   _curfilt_cnt[6]={0};
+  float _FiltCurDyn_Regr2[6]={0.0f};
+  float _FiltCurDyn_Regr1[6]={0.0f};
+  float _FiltCurMis_Regr2[6]={0.0f};
+  float _FiltCurMis_Regr1[6]={0.0f};
+  float DEFAULT_COLL_THR[7];
+  float curr_limit[7];
+  void  algoCollisionThr(edo_core_msgs::CollisionThreshold msg);
   ros::Timer collTimer;
   void jntResetCallback(edo_core_msgs::JointResetConstPtr msg);
   void unbrakeTimerCallback(const ros::TimerEvent& event);
-  void machineInitCallback(edo_core_msgs::JointInitConstPtr msg);
   bool _collision_disable;
-    
-  int _ORL_error;
-  bool _flag_set;
+  bool collisionCheck(float vr_CurMis, float vr_CurDyn, int vi_JointIndex, float curr_limit[7]);
   
-  /* Collision Double Check */
+  // Brakes Check
+  bool _vb_BcFlag;
+  void machineStateCallback(edo_core_msgs::MachineState msg);
+  float CollisionFactor;
+  
+  // Tool Configuration and I/O Handling
+  void toolConfigCallback(std_msgs::Int8 msg);
+  int _tool_id;
+  
+  // Collision Double Check
   float _cur_res_joint[6]={0.0f} ;
   float _cur_res_rasp[6] ={0.0f} ;
 };
-
-
 
 #endif /* EDO_CORE_PKG_INCLUDE_ALGORITHMMANAGER_HPP_ */

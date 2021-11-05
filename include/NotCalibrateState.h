@@ -41,33 +41,35 @@
 #include "State.h"
 #include "SubscribePublish.h"
 
-class NotCalibrateState: public State {
+class NotCalibrateState: public State
+{
+
 public:
-	static NotCalibrateState* getInstance();
-	void getCurrentState();
-	State* HandleJntState(const edo_core_msgs::JointStateArray& state);
-	State* HandleCalibrate(const edo_core_msgs::JointCalibration& joints);
-	State* HandleJog(const edo_core_msgs::MovementCommand& msg);
-	State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
-	State* ackCommand();
+  static NotCalibrateState* getInstance();
+  void getCurrentState();
+  State* HandleJntState(const edo_core_msgs::JointStateArray& state);
+  State* HandleCalibrate(const edo_core_msgs::JointCalibration& joints);
+  State* HandleJog(const edo_core_msgs::MovementCommand& msg);
+  State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
+  State* ackCommand();
 
 private:
 
-	enum InternalJointState {
-		NO_STATE_RECEIVED = 0,
-		NO_CALIBRATE = 1,
-		TO_BE_CALIBRATE = 2,
-		CALIBRATE = 3
-	};
+  enum InternalJointState {
+    NO_STATE_RECEIVED = 0,
+    NO_CALIBRATE = 1,
+    TO_BE_CALIBRATE = 2,
+    CALIBRATE = 3
+  };
 
-	NotCalibrateState();
-	NotCalibrateState(NotCalibrateState const&);
-	NotCalibrateState& operator=(NotCalibrateState const&);
-	State* CalibrateJoints();
+  NotCalibrateState();
+  NotCalibrateState(NotCalibrateState const&);
+  NotCalibrateState& operator=(NotCalibrateState const&);
+  State* CalibrateJoints();
 
-	static NotCalibrateState* instance;
-	InternalJointState* jointCalibrationState;
-	SubscribePublish* SPinstance;
+  static NotCalibrateState* instance;
+  InternalJointState* jointCalibrationState;
+  SubscribePublish* SPinstance;
 };
 
 #endif /* EDO_CORE_PKG_SRC_NOTCALIBRATESTATE_H_ */

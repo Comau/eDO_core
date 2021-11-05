@@ -36,15 +36,15 @@
 
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv,"edo_state_machine");
+  ros::init(argc, argv,"edo_state_machine");
     SubscribePublish* SAPObject = SubscribePublish::getInstance();
-	
-	ros::Rate loop_rate(100);
-	while(ros::ok())
-	{
+  
+  ros::Rate loop_rate(100);
+  while(ros::ok())
+  {
       ros::spinOnce();
       loop_rate.sleep();
-	}
+  }
 
     return 0;
 }

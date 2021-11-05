@@ -45,98 +45,101 @@
 
 CalibrateState* CalibrateState::instance = NULL;
 
-CalibrateState::CalibrateState() {
-	// TODO Auto-generated constructor stub
-	machineCurrentState = MACHINE_CURRENT_STATE::CALIBRATE;
+CalibrateState::CalibrateState()
+{
+  // TODO Auto-generated constructor stub
+  machineCurrentState = MACHINE_CURRENT_STATE::CALIBRATE;
 }
 
-CalibrateState* CalibrateState::getInstance() {
+CalibrateState* CalibrateState::getInstance()
+{
+  if (instance == NULL)
+  {
+    instance = new CalibrateState();
+  }
 
-	if (instance == NULL) {
-		instance = new CalibrateState();
-	}
-
-	return instance;
+  return instance;
 }
 
-void CalibrateState::getCurrentState() {
-	ROS_INFO("Current State is: CALIBRATE");
+void CalibrateState::getCurrentState()
+{
+  ROS_INFO("Current State is: CALIBRATE");
 }
 
-State* CalibrateState::HandleCalibrate(const edo_core_msgs::JointCalibration& joints) {
+State* CalibrateState::HandleCalibrate(const edo_core_msgs::JointCalibration& joints)
+{
+  CommandState* command = CommandState::getInstance();
 
-	CommandState* command = CommandState::getInstance();
+  command->ExecuteCommand(this, joints);
 
-	command->ExecuteCommand(this, joints);
-
-	return command;
+  return command;
 }
 
-State* CalibrateState::HandleConfig(const edo_core_msgs::JointConfigurationArray& joints) {
+State* CalibrateState::HandleConfig(const edo_core_msgs::JointConfigurationArray& joints)
+{
+  CommandState* command = CommandState::getInstance();
 
-	CommandState* command = CommandState::getInstance();
+  command->ExecuteCommand(this, joints);
 
-	command->ExecuteCommand(this, joints);
-
-	return command;
+  return command;
 }
 
-State* CalibrateState::HandleInit(const edo_core_msgs::JointInit mask) {
+State* CalibrateState::HandleInit(const edo_core_msgs::JointInit mask)
+{
+  CommandState* command = CommandState::getInstance();
 
-	CommandState* command = CommandState::getInstance();
+  command->ExecuteCommand(this, mask);
 
-	command->ExecuteCommand(this, mask);
-
-	return command;
-
+  return command;
 }
 
-State* CalibrateState::HandleJog(const edo_core_msgs::MovementCommand& move_msg) {
+State* CalibrateState::HandleJog(const edo_core_msgs::MovementCommand& move_msg)
+{
+  if (move_msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP)
+  {
+    // Se sono in questo stato vuol dire che non ho ancora ricevuto il comando di start
+    // altrimenti sarei nello stato JogState
+    ROS_INFO("Jog movement is not active.");
+    return this;
+  }
 
-	if (move_msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP) {
-		// Se sono in questo stato vuol dire che non ho ancora ricevuto il comando di start
-		// altrimenti sarei nello stato JogState
-		ROS_INFO("Jog movement is not active.");
-		return this;
-	}
+  JogState* jog = JogState::getInstance();
 
-	JogState* jog = JogState::getInstance();
-
-	// Eseguo il comando...
-	return jog->ExecuteJog(this, move_msg);
+  // Eseguo il comando...
+  return jog->ExecuteJog(this, move_msg);
 }
 
-State* CalibrateState::HandleMove(const edo_core_msgs::MovementCommand& msg) {
+State* CalibrateState::HandleMove(const edo_core_msgs::MovementCommand& msg)
+{
 
-#if 0
+  #if 0
   printf ("[CalibrateState,%d] Move Command %c Lin %f\n",__LINE__, msg.move_command, msg.cartesian_linear_speed);
-#endif
+  #endif
   MoveCommandState* move = MoveCommandState::getInstance();
 
   // Eseguo il comando...
   return move->StartMove(this, msg);
 }
 
-State* CalibrateState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack) {
-
-#if 0
-	// Invio ack a bridge
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
-	if(ack.type != F_NEED_DATA)
-		SPInstance->MoveAck(ack);
-	return this;
-#endif
-#if 0
+State* CalibrateState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack)
+{
+  #if 0
+  // Invio ack a bridge
+  SubscribePublish* SPInstance = SubscribePublish::getInstance();
+  if(ack.type != F_NEED_DATA)
+    SPInstance->MoveAck(ack);
+  return this;
+  #endif
+  #if 0
   printf ("[CalibrateState,%d] Ack:%d Data:%d\n",__LINE__, ack.type, ack.data);
-#endif
+  #endif
   MoveCommandState* move = MoveCommandState::getInstance();
 
   // Eseguo il comando...
   return move->StartAck(this, ack);
-
 }
 
-State* CalibrateState::ackCommand() {
-
-	machineCurrentState = MACHINE_CURRENT_STATE::CALIBRATE;
-}  
+State* CalibrateState::ackCommand()
+{
+  machineCurrentState = MACHINE_CURRENT_STATE::CALIBRATE;
+}

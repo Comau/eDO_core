@@ -52,72 +52,79 @@
 
 #include "State.h"
 
-class StateManager {
-public:
-	StateManager();
-	virtual ~StateManager();
-	void HandleJntState(const edo_core_msgs::JointStateArray& state);
-	void HandleJntVersion(const edo_core_msgs::JointFwVersion& msg);
-	void HandleReset(const edo_core_msgs::JointReset mask);
-	void HandleConfig(const edo_core_msgs::JointConfigurationArray& state);
-	void HandleCalibration(const edo_core_msgs::JointCalibration& jointMask);
-	void HandleInit(const edo_core_msgs::JointInit msg);
-	void HandleJog(const edo_core_msgs::MovementCommand& msg);
-	void HandleMove(const edo_core_msgs::MovementCommand& msg);
-	void HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
-	void HandleEdoError(const std_msgs::String errorStr);
-	void ackTimeout(State* previous);
-	void moveTimeout(State* previous);
-	void getCurrentState();
-	const uint8_t & getMachineState();
-	const uint32_t & getMachineOpcode();
-	bool getSwVersion(edo_core_msgs::SoftwareVersion::Request &req, edo_core_msgs::SoftwareVersion::Response &res);
-	bool getInfo(std::string& hwinfo, std::string& swinfo);
-	void HB_fail_Callback(std_msgs::Bool msg);
-	void HandleBrakesCheck(std_msgs::Bool msg);
-	
-	void HandleAlgoCollision(const edo_core_msgs::CollisionAlgoToState& msg);
-	
-	ros::Timer timerJointVersion;
-	
-	ros::Subscriber brakes_check_start_subscriber;
-	ros::Publisher brakes_check_ack_publisher;
-	
-private:
+class StateManager
+{
 
-	struct Joint {
-		std::string version;
-		bool versionReceived;
-		uint16_t noReplyCounter;
-	};
-	void timerJointStateCallback(const ros::TimerEvent& event);
-	void timerJointVersionCallback(const ros::TimerEvent& event);
-	void setMachineOpcode(const uint8_t bit, const bool set);
-	
-	void send_BrakeOn();
-	void incrementalMoveCreation(int move1, int move2, int move3);
-		
-	State *current;
-	std::vector<Joint> joints;
-	std::string usbVersion;
-	ros::NodeHandle privateNh;
-	ros::Timer timerJointState;
-	uint32_t machineOpcode;
-	
-	bool    underVoltage_Algo;
-	uint8_t jnt_coll_mask;
-	
-	bool    _tabletFail;
-	
-	bool    bc_flag;
-	bool    bc_return_home;
-	int     bc_move1;
-	int     bc_move2;
-	int     bc_move3;
-	int     bc_jnt1;
-	int     bc_jnt2;
-	int     bc_jnt3;
-	uint8_t bc_mask;
+public:
+  StateManager();
+  virtual ~StateManager();
+  void HandleJntState(const edo_core_msgs::JointStateArray& state);
+  void HandleJntVersion(const edo_core_msgs::JointFwVersion& msg);
+  void HandleReset(const edo_core_msgs::JointReset mask);
+  void HandleConfig(const edo_core_msgs::JointConfigurationArray& state);
+  void HandleCalibration(const edo_core_msgs::JointCalibration& jointMask);
+  void HandleInit(const edo_core_msgs::JointInit msg);
+  void HandleJog(const edo_core_msgs::MovementCommand& msg);
+  void HandleMove(const edo_core_msgs::MovementCommand& msg);
+  void HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
+  void HandleEdoError(const std_msgs::String errorStr);
+  void ackTimeout(State* previous);
+  void moveTimeout(State* previous);
+  void getCurrentState();
+  const uint8_t & getMachineState();
+  const uint32_t & getMachineOpcode();
+  bool getSwVersion(edo_core_msgs::SoftwareVersion::Request &req, edo_core_msgs::SoftwareVersion::Response &res);
+  bool getInfo(std::string& hwinfo, std::string& swinfo);
+  void HB_fail_Callback(std_msgs::Bool msg);
+  void HandleBrakesCheck(std_msgs::Bool msg);
+  void HandleAlgoCollision(const edo_core_msgs::CollisionAlgoToState& msg);
+  
+  ros::Timer timerJointVersion;
+  ros::Subscriber brakes_check_start_subscriber;
+  ros::Publisher brakes_check_ack_publisher;
+  
+private:
+  
+  struct Joint {
+    std::string version;
+    bool versionReceived;
+    uint16_t noReplyCounter;
+  };
+  
+  void timerJointStateCallback(const ros::TimerEvent& event);
+  void timerJointVersionCallback(const ros::TimerEvent& event);
+  void setMachineOpcode(const uint8_t bit, const bool set);
+  void send_BrakeOn();
+  void incrementalMoveCreation(int move1, int move2, int move3);
+  void unbrakeTimerCallback(const ros::TimerEvent& event);
+  
+  State *current;
+  std::vector<Joint> joints;
+  std::string usbVersion;
+  ros::NodeHandle privateNh;
+  ros::Timer timerJointState;
+  uint32_t machineOpcode;
+  uint8_t object_state;
+  float object_pos;
+  float object_vel;
+  
+  bool    _vb_UndervoltageAlgo;
+  uint8_t _vi_AlgoCollisionMask;
+  
+  bool       _vb_ErrorLogged;
+  ros::Timer collTimer;
+  
+  bool    _vb_TabletFail;
+  
+  bool    _vb_BcFlag;
+  bool    _vb_BcHome;
+  int     _vi_BcMove1;
+  int     _vi_BcMove2;
+  int     _vi_BcMove3;
+  int     _vi_BcJnt1;
+  int     _vi_BcJnt2;
+  int     _vi_BcJnt3;
+  uint8_t _vi_BcResultMask;
 };
 
 #endif /* EDO_CORE_PKG_SRC_STATEMANAGER_H_ */

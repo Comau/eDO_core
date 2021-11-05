@@ -38,25 +38,26 @@
 
 #include "State.h"
 
+class CalibrateState: public State
+{
 
-class CalibrateState: public State {
 public:
-	static CalibrateState* getInstance();
-	void getCurrentState();
-	State* HandleCalibrate(const edo_core_msgs::JointCalibration& joints);
-	State* HandleConfig(const edo_core_msgs::JointConfigurationArray& joints);
-	State* HandleInit(const edo_core_msgs::JointInit mask);
-	State* HandleJog(const edo_core_msgs::MovementCommand& msg);
-	State* HandleMove(const edo_core_msgs::MovementCommand& msg);
-	State* HandleMovement();
-	State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
-	State* ackCommand();
+  static CalibrateState* getInstance();
+  void getCurrentState();
+  State* HandleCalibrate(const edo_core_msgs::JointCalibration& joints);
+  State* HandleConfig(const edo_core_msgs::JointConfigurationArray& joints);
+  State* HandleInit(const edo_core_msgs::JointInit mask);
+  State* HandleJog(const edo_core_msgs::MovementCommand& msg);
+  State* HandleMove(const edo_core_msgs::MovementCommand& msg);
+  State* HandleMovement();
+  State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
+  State* ackCommand();
 
 private:
-	CalibrateState();
-	CalibrateState(CalibrateState const&);
-	CalibrateState& operator=(CalibrateState const&);
-	static CalibrateState* instance;
+  CalibrateState();
+  CalibrateState(CalibrateState const&);
+  CalibrateState& operator=(CalibrateState const&);
+  static CalibrateState* instance;
 };
 
 #endif /* EDO_CORE_PKG_SRC_CALIBRATESTATE_H_ */

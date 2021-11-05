@@ -46,94 +46,100 @@
 
 NotCalibrateState* NotCalibrateState::instance = NULL;
 
-NotCalibrateState::NotCalibrateState() {
-
-	machineCurrentState = MACHINE_CURRENT_STATE::NOT_CALIBRATE;
-	SPinstance = SubscribePublish::getInstance();
+NotCalibrateState::NotCalibrateState()
+{
+  machineCurrentState = MACHINE_CURRENT_STATE::NOT_CALIBRATE;
+  SPinstance = SubscribePublish::getInstance();
 }
 
-NotCalibrateState* NotCalibrateState::getInstance() {
-
-	if (instance == NULL) {
-		instance = new NotCalibrateState();
-	}
-
-	return instance;
+NotCalibrateState* NotCalibrateState::getInstance()
+{
+  if (instance == NULL)
+  {
+    instance = new NotCalibrateState();
+  }
+  return instance;
 }
 
-void NotCalibrateState::getCurrentState() {
-
-	ROS_INFO("Current State is: NOT CALIBRATE");
+void NotCalibrateState::getCurrentState()
+{
+  ROS_INFO("Current State is: NOT CALIBRATE");
 }
 
-State* NotCalibrateState::HandleCalibrate(const edo_core_msgs::JointCalibration& joints) {
-
-	CommandState* command = CommandState::getInstance();
-
-	command->ExecuteCommand(this, joints);
-
-	return command;
+State* NotCalibrateState::HandleCalibrate(const edo_core_msgs::JointCalibration& joints)
+{
+  CommandState* command = CommandState::getInstance();
+  command->ExecuteCommand(this, joints);
+  return command;
 }
 
-State* NotCalibrateState::HandleJntState(const edo_core_msgs::JointStateArray& state) {
-	int jointsNum = SPinstance->GetJointsNumber();
-	unsigned long sm_joints_mask;
-	bool allJointsCalibrated = false;
-	
-	if (jointsNum <= 0)
-		return this;
+State* NotCalibrateState::HandleJntState(const edo_core_msgs::JointStateArray& state)
+{
+  int jointsNum = SPinstance->GetJointsNumber();
+  unsigned long sm_joints_mask;
+  bool allJointsCalibrated = false;
+  
+  if (jointsNum <= 0)
+    return this;
 
-	sm_joints_mask = (unsigned long)state.joints_mask;
-	for (int i = 0; i < jointsNum; i++) {
+  sm_joints_mask = (unsigned long)state.joints_mask;
+  for (int i = 0; i < jointsNum; i++)
+  {
+    if ((sm_joints_mask & (1 << i)) != 0)
+    {
+      if((state.joints[i].commandFlag & (1 << COMMAND_FLAG::UNCALIBRATED)) == 0)
+      {
+        allJointsCalibrated = true;
+      }
+      else
+      {
+        allJointsCalibrated = false;
+        break;
+      }
+    }
+  }
+  
+  if(allJointsCalibrated)
+    return CalibrateState::getInstance();
 
-		if ((sm_joints_mask & (1 << i)) != 0) {
-			if((state.joints[i].commandFlag & (1 << COMMAND_FLAG::UNCALIBRATED)) == 0) {
-				allJointsCalibrated = true;
-			} else {
-				allJointsCalibrated = false;
-				break;
-			}
-		}
-	}
-	
-	if(allJointsCalibrated)
-		return CalibrateState::getInstance();
-		
-	return this;
+  return this;
 }
 
-State* NotCalibrateState::HandleJog(const edo_core_msgs::MovementCommand& msg) {
+State* NotCalibrateState::HandleJog(const edo_core_msgs::MovementCommand& msg)
+{
+  int jointsOk = 0;
 
-	int jointsOk = 0;
+  // Nella fase di calibrazione si accetta solo il movimento di Jog in giunti...
+  if ((msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGMOVE) &&
+       msg.move_type    == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR)
+  { 
+    // Se il movimento è cartesiano...
+    ROS_INFO("[%d] Move Command %c not available with MOVE_TYPE %c in current state.",__LINE__,msg.move_command,msg.move_type);
+    return this;
+  }
+  else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP)
+  {
+    // Se sono in questo stato vuol dire che non ho ancora ricevuto il comando di start
+    // altrimenti sarei nello stato JogState
+    ROS_INFO("[%d] Jog movement is not active.",__LINE__);
+    return this;
+  }
 
-	// Nella fase di calibrazione si accetta solo il movimento di Jog in giunti...
-	if ((msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGMOVE) &&
-       msg.move_type    == E_MOVE_TYPE::E_MOVE_TYPE_LINEAR) { // Se il movimento è cartesiano...
-		ROS_INFO("[%d] Move Command %c not available with MOVE_TYPE %c in current state.",__LINE__,msg.move_command,msg.move_type);
-		return this;
-	} 
-  else if (msg.move_command == E_MOVE_COMMAND::E_MOVE_COMMAND_JOGSTOP) {
-		// Se sono in questo stato vuol dire che non ho ancora ricevuto il comando di start
-		// altrimenti sarei nello stato JogState
-		ROS_INFO("[%d] Jog movement is not active.",__LINE__);
-		return this;
-	}
+  JogState* jog = JogState::getInstance();
 
-	JogState* jog = JogState::getInstance();
-
-	// Eseguo il comando...
-	return jog->ExecuteJog(this, msg);
+  // Eseguo il comando...
+  return jog->ExecuteJog(this, msg);
 }
 
-State* NotCalibrateState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack) {
-
-	// Invio ack a bridge
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
-	SPInstance->MoveAck(ack);
-	return this;
+State* NotCalibrateState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ack)
+{
+  // Invio ack a bridge
+  SubscribePublish* SPInstance = SubscribePublish::getInstance();
+  SPInstance->MoveAck(ack);
+  return this;
 }
 
-State* NotCalibrateState::ackCommand() {
-
-	machineCurrentState = MACHINE_CURRENT_STATE::NOT_CALIBRATE;
+State* NotCalibrateState::ackCommand()
+{
+  machineCurrentState = MACHINE_CURRENT_STATE::NOT_CALIBRATE;
 }                                                                             

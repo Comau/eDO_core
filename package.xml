@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package>
   <name>edo_core_pkg</name>
-  <version>2.4.0</version>
+  <version>3.1.2</version>
   <description>The edo_core package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
@@ -25,14 +25,10 @@
   <!-- Authors do not have to be maintainers, but could be -->
   <!-- Example: -->
   <!-- <author email="jane.doe@example.com">Jane Doe</author> -->
-  <author>Lazzero Ivan</author>
-  <author>Primatesta Stefano</author>
-  <author>Gonizzi Pietro</author>
-  <author>Bosia Alberto</author>
-  <author email="ludus.russo@gmail.com">Russo Ludovico Orlando</author>
-  <author>Palmieri Stefano</author>
-  <author></author>
-  <author email="AndreaGaetano.Citrolo@altran.com">Citrolo Andrea Gaetano</author>
+  <author email="fabio.abba@comau.com">Fabio Abbà</author>
+  <author email="stefano.pesce@comau.com">Stefano Pesce</author>
+  <author>Nicola Ancona</author>
+  <author>Alessandro Renato</author>
 
 
   <buildtool_depend>catkin</buildtool_depend>

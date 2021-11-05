@@ -37,39 +37,39 @@
 #define EDO_CORE_PKG_SRC_JOGSTATE_H_
 
 #include "ros/ros.h"
-
 #include "State.h"
 #include "EdoMsgType.h"
 
-class JogState: public State {
+class JogState: public State
+{
+
 public:
-	static JogState* getInstance();
-	void getCurrentState();
-	State* HandleJog(const edo_core_msgs::MovementCommand& msg);
-	State* ExecuteJog(State* state, const edo_core_msgs::MovementCommand& msg);
+  static JogState* getInstance();
+  void getCurrentState();
+  State* HandleJog(const edo_core_msgs::MovementCommand& msg);
+  State* ExecuteJog(State* state, const edo_core_msgs::MovementCommand& msg);
 
 private:
 
-	enum InternalState {
-		STOPPED = 0,
-		MOVING = 1
-	};
+  enum InternalState {
+    STOPPED = 0,
+    MOVING = 1
+  };
 
-	JogState();
-	JogState(JogState const&);
-	JogState& operator=(JogState const&);
-	void Init();
-	State* StopJog();
-	void timerCallback(const ros::TimerEvent& event);
+  JogState();
+  JogState(JogState const&);
+  JogState& operator=(JogState const&);
+  void Init();
+  State* StopJog();
+  void timerCallback(const ros::TimerEvent& event);
 
-	static JogState* instance;
-	InternalState currentState;
-	State* previousState;
+  static JogState* instance;
+  InternalState currentState;
+  State* previousState;
 
-	ros::NodeHandle privateNh;
-	ros::Timer timerMsg;
-	edo_core_msgs::MovementCommand currentJogCommand;
+  ros::NodeHandle privateNh;
+  ros::Timer timerMsg;
+  edo_core_msgs::MovementCommand currentJogCommand;
 };
-
 
 #endif /* EDO_CORE_PKG_SRC_JOGSTATE_H_ */

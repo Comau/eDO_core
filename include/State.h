@@ -53,85 +53,98 @@
 #define STATE_MACHINE_DEVELOPMENT_RELEASE (1==0)
 
 enum MACHINE_CURRENT_STATE {
-	COMMAND_STATE = 255, 	/* Stato temporaneno quando c'è un comando in esecuzione */
-	INIT = 0, 				/* Stato iniziale */
-	NOT_CALIBRATE = 1, 		/* macchina non calibrata */
-	CALIBRATE = 2, 			/* macchina calibrata */
-	MOVE = 3, 				/* macchina in esecuzione di una move */
-	JOG = 4, 				/* macchina in esecuzione di un jog */
-	MACHINE_ERROR = 5, 		/* macchina in stato di error e in attesa  di un riavvio */
-	BRAKED = 6, 			/* brake active, no motor power supply */
-	BRAKES_CHECK = 7, 		/* check state for the brakes: brakes active and motor on! */
-	MOVE_TEST = 8			/* */
+  COMMAND_STATE = 255,  /* Stato temporaneno quando c'è un comando in esecuzione */
+  INIT = 0,         /* Stato iniziale */
+  NOT_CALIBRATE = 1,    /* macchina non calibrata */
+  CALIBRATE = 2,      /* macchina calibrata */
+  MOVE = 3,         /* macchina in esecuzione di una move */
+  JOG = 4,        /* macchina in esecuzione di un jog */
+  MACHINE_ERROR = 5,    /* macchina in stato di error e in attesa  di un riavvio */
+  BRAKED = 6,       /* brake active, no motor power supply */
+  BRAKES_CHECK = 7,     /* check state for the brakes: brakes active and motor on! */
+  MOVE_TEST = 8     /* */
 };
 
 enum MACHINE_OPCODE {
-	NACK = 0,               /* Bit 0 - Ack non ricevuto/i da almeno un giunto */
-	JOINT_ABSENT = 1,       /* Bit 1 - Un giunto non sta pubblicando il proprio stato. Ferma tutto. */
-	JOINT_OVERCURRENT = 2,  /* Bit 2 - Allarme di saturazione di corrente su un giunto. Ferma tutto. */
-	JOINT_UNCALIBRATED = 3, /* Bit 3 - Allarme di uncalibrated su un giunto. Solo il jog giunti è accettato. */
-	POSITION_ERROR = 4,     /* Bit 4 - Errore di posizione della macchina. Ferma tutto. */
-	ROSSERIAL_ERROR = 5,    /* Bit 5 - Errore su rosserial, no stato dei giunti. Ferma tutto. */
-	BRAKE_ACTIVE = 6,       /* Bit 6 - Freno inserito, no potenza motori */
-	EMERGENCY_STOP = 7,     /* Bit 7 - Fungo attivo */
-	FENCE = 8,              /* Bit 8 - Fence attivo */
-	COLLISION_ON = 9        /* Bit 9 - Rilevata Collisione */ 
+  NACK = 0,               /* Bit 0 - Ack non ricevuto/i da almeno un giunto */
+  JOINT_ABSENT = 1,       /* Bit 1 - Un giunto non sta pubblicando il proprio stato. Ferma tutto. */
+  JOINT_OVERCURRENT = 2,  /* Bit 2 - Allarme di saturazione di corrente su un giunto. Ferma tutto. */
+  JOINT_UNCALIBRATED = 3, /* Bit 3 - Allarme di uncalibrated su un giunto. Solo il jog giunti è accettato. */
+  POSITION_ERROR = 4,     /* Bit 4 - Errore di posizione della macchina. Ferma tutto. */
+  ROSSERIAL_ERROR = 5,    /* Bit 5 - Errore su rosserial, no stato dei giunti. Ferma tutto. */
+  BRAKE_ACTIVE = 6,       /* Bit 6 - Freno inserito, no potenza motori */
+  EMERGENCY_STOP = 7,     /* Bit 7 - Fungo attivo */
+  FENCE = 8,              /* Bit 8 - Fence attivo */
+  COLLISION_ON = 9        /* Bit 9 - Rilevata Collisione */ 
 };
 
 enum COMMAND_FLAG {
-	IDLE = 0x00,
-	ACK_INIT = 0x01,        /* ack a un messaggio di init */
-	ACK_CALIBRATION = 0x02, /* ack a un messaggio di calibrazione */
-	ACK_CONFIG = 0x03,      /* ack a un messaggio di configurazione pid */
-	ACK_RESET = 0x04,       /* ack a un messaggio di reset */
-	ACK_FW_VERSION = 0x05,  /* ack a un messaggio di firmware version */
-	COLLISION = 4,          /* bit 4 - Rilevata collisione */
-	H_BRIDGE_DOWN = 5,      /* bit 5 - ponte h aperto - no potenza motori */
-	OVERCURRENT = 6,        /* bit 6 -sovracorrente */
-	UNCALIBRATED = 7        /* bit 7 - giunto non calibrato */
+  IDLE = 0x0000,
+  ACK_INIT = 1,               /* ack a un messaggio di init */
+  ACK_CALIBRATION = 2,        /* ack a un messaggio di calibrazione */
+  ACK_CONFIG = 3,             /* ack a un messaggio di configurazione pid */
+  ACK_RESET = 4,              /* ack a un messaggio di reset */
+  H_BRIDGE_DOWN = 5,          /* bit 5 - ponte h aperto - no potenza motori */
+  OVERCURRENT = 6,            /* bit 6 -sovracorrente */
+  UNCALIBRATED = 7,           /* bit 7 - giunto non calibrato */
+  ERR_COLLISION = 8,
+  ERR_DOUBLECHECK = 9,
+  ERR_MAXVELOCITY = 10,
+  ERR_FOLLOWING = 11,
+  ERR_OVERCURRENT = 12,
+  ERR_UNDERVOLTAGE = 13,
+  ERR_STRKEND = 14,
+  STATUS_ERROR_MASK = 0x00e0,  /* bit 0111 0000 - tre errori di collision, overcurrent, uncalibrated */
+  COLL_INFO_MASK = 0x3f00
 };
 
 enum ALGORITHM_STATE {
-	UNINITIALIZED = 0,
-	INITIALIZED = 1,
-	MOVING = 2,
-	WAITING = 3,
-	BLOCKED = 4,
-	FINISHED = 5,
-	PAUSE = 6,
-	RECOVERY = 7,
-	HOLD = 8,
-	SWITCHED_OFF = 9
+  UNINITIALIZED = 0,
+  INITIALIZED = 1,
+  MOVING = 2,
+  WAITING = 3,
+  BLOCKED = 4,
+  FINISHED = 5,
+  PAUSE = 6,
+  RECOVERY = 7,
+  HOLD = 8,
+  SWITCHED_OFF = 9
 };
 
-class State {
+enum OBJECT_STATE {
+  NONE = 0,     // edo cube object not present/detected
+  DETECTED = 1, // edo cube object present/detected        
+};
+
+class State
+{
+
 public:
-	State();
-	virtual ~State();
-	virtual void getCurrentState() = 0;
-	virtual State* HandleJntState(const edo_core_msgs::JointStateArray& state);
-	virtual State* HandleCalibrate(const edo_core_msgs::JointCalibration& joints);
-	virtual State* HandleReset(const edo_core_msgs::JointReset mask);
-	virtual State* HandleConfig(const edo_core_msgs::JointConfigurationArray& joints);
-	virtual State* HandleInit(const edo_core_msgs::JointInit mask);
-	virtual State* HandleMove(const edo_core_msgs::MovementCommand& msg);
-	virtual State* HandleJog(const edo_core_msgs::MovementCommand& msg);
-	virtual State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
-	virtual State* ackCommand();
-	virtual State* HandleJntVersion(bool timeout);
+  State();
+  virtual ~State();
+  virtual void getCurrentState() = 0;
+  virtual State* HandleJntState(const edo_core_msgs::JointStateArray& state);
+  virtual State* HandleCalibrate(const edo_core_msgs::JointCalibration& joints);
+  virtual State* HandleReset(const edo_core_msgs::JointReset mask);
+  virtual State* HandleConfig(const edo_core_msgs::JointConfigurationArray& joints);
+  virtual State* HandleInit(const edo_core_msgs::JointInit mask);
+  virtual State* HandleMove(const edo_core_msgs::MovementCommand& msg);
+  virtual State* HandleJog(const edo_core_msgs::MovementCommand& msg);
+  virtual State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
+  virtual State* ackCommand();
+  virtual State* HandleJntVersion(bool timeout);
+  const uint8_t & getMachineCurrentState();
 
-	const uint8_t & getMachineCurrentState();
-	int _algorithm_state;
-	
+  int _algorithm_state;
+  
 private:
-	ros::NodeHandle node_obj;
-	void AlgorithmStateCallback(const std_msgs::Int8 msg);
-	
+  ros::NodeHandle node_obj;
+  void AlgorithmStateCallback(const std_msgs::Int8 msg);
+  
 protected:
-
-	uint8_t machineCurrentState;
-	uint32_t machineOpcode;
-	
+  uint8_t machineCurrentState;
+  uint32_t machineOpcode;
+  
 };
 
 #endif /* STATE_H_ */

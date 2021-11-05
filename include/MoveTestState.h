@@ -27,63 +27,57 @@
   either expressed or implied, of the FreeBSD Project.
 */
 /*
- * InitState.h
+ * MoveTestState.h
  *
- *  Created on: Jul 12, 2017
+ *  Created on: May 14, 2019
  *      Author: comau
  */
 
-#ifndef EDO_CORE_PKG_INCLUDE_INITSTATE_H_
-#define EDO_CORE_PKG_INCLUDE_INITSTATE_H_
+#ifndef EDO_CORE_PKG_MOVETESTSTATE_H_
+#define EDO_CORE_PKG_MOVETESTSTATE_H_
+
+#include "ros/ros.h"
+#include <vector>
 
 #include "State.h"
-#include "SubscribePublish.h"
-#include <tinyxml.h>
-#include <ros/package.h>
 
-class InitState: public State
+class MoveTestState: public State
 {
 
 public:
-
-  static InitState* getInstance();
-  void getCurrentState();
-  State* HandleInit(const edo_core_msgs::JointInit mask);
-  State* ackCommand();
-  State* HandleJntVersion(bool timeout);
+  static MoveTestState* getInstance();
+  void   getCurrentState();
+  State* HandleMove(const edo_core_msgs::MovementCommand& msg);
+  void   ExecuteNextMove(const edo_core_msgs::MovementCommand& msg);
+  State* HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
+  State* StartMove(State* state, const edo_core_msgs::MovementCommand& msg);
+  State* StartAck(State* state, const edo_core_msgs::MovementFeedback& ack);
 
 private:
 
-  enum InternalState {
-    WAIT = 0,
-    DISCOVERY = 1,
-    SET = 2,
-    DELETE = 3,
-    MASK_JOINTS = 4,
-    GET_VERSION = 5,
-    GET_VERSION_DONE = 6,
-    SET_PID_PARAM = 7,
-    JOINTS_RESET = 8
+  MoveTestState();
+  MoveTestState(MoveTestState const&);
+  MoveTestState& operator=(MoveTestState const&);
+  void Init();
+  bool MessageIsValid(const edo_core_msgs::MovementCommand& msg);
+  bool InternalStateIsValid(uint8_t moveType);
+  void SendMovementAck(const MESSAGE_FEEDBACK& ackType, int8_t data, int asi_line);
+
+  enum INTERNAL_STATE {
+    IDLE   = 0,
+    PAUSE  = 1,
+    CANCEL = 2,
+    RESUME = 3
   };
 
-  InitState();
-  InitState(InitState const&);
-  InitState& operator=(InitState const&);
-  void resetState();
-  bool loadConfiguration(edo_core_msgs::JointConfigurationArray & msg, const char* pFilename);
-  void loadConfiguration( TiXmlNode* pParent, edo_core_msgs::JointConfigurationArray & msg, int & count);
-  bool loadAttribute(TiXmlElement* pElement, double & attribute);
-
-  static InitState* instance;
-  InternalState currentState;
-  SubscribePublish* SPinstance;
-  bool* jointInitState;
-  int jointToSet;
-  bool completeDiscovery;
-  uint8_t currentJointVersionID;
-  uint8_t versionRetries;
+  static MoveTestState* instance;
+  State* previousState;
+  std::vector<edo_core_msgs::MovementCommand> moveMsgBuffer;
+  int bufferSize;
+  bool firstSent;
+  INTERNAL_STATE internalState;
+  unsigned long int counterMsgSent;
+  unsigned long int counterAckReceived;
 };
 
-#define NUM_MAX_JOINTS 7
-
-#endif /* EDO_CORE_PKG_INCLUDE_INITSTATE_H_ */
+#endif

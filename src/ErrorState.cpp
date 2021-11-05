@@ -41,30 +41,30 @@ ErrorState* ErrorState::instance = NULL;
 
 ErrorState::ErrorState() {
 
-	machineCurrentState = MACHINE_CURRENT_STATE::MACHINE_ERROR;
+  machineCurrentState = MACHINE_CURRENT_STATE::MACHINE_ERROR;
 }
 
 ErrorState* ErrorState::getInstance() {
 
-	if (instance == NULL) {
-		instance = new ErrorState();
-	}
+  if (instance == NULL) {
+    instance = new ErrorState();
+  }
 
-	// chiama la sysCall di rilascio relè K3 e ferma la macchina
-	system("edo_stop");
-		
-	// Invio una Move Cancel se sono finito in questo stato
-	edo_core_msgs::MovementCommand msg;
-	msg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL;
-	SubscribePublish* SPInstance = SubscribePublish::getInstance();
-	SPInstance->MoveMsg(msg);
+  // chiama la sysCall di rilascio relè K3 e ferma la macchina
+  system("edo_stop");
+    
+  // Invio una Move Cancel se sono finito in questo stato
+  edo_core_msgs::MovementCommand msg;
+  msg.move_command = E_MOVE_COMMAND::E_MOVE_COMMAND_CANCEL;
+  SubscribePublish* SPInstance = SubscribePublish::getInstance();
+  SPInstance->MoveMsg(msg);
 
-	return instance;
+  return instance;
 }
 
 void ErrorState::getCurrentState() {
 
-	ROS_INFO("Current State is: ERROR");
+  ROS_INFO("Current State is: ERROR");
 }
 
 

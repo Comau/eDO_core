@@ -37,32 +37,20 @@
  
  C5GManager::C5GManager()
  {
- 	robot_switch_control_client = node_obj.serviceClient<edo_core_msgs::ControlSwitch>("/algo_control_switch_srv");	
+  robot_switch_control_client = node_obj.serviceClient<edo_core_msgs::ControlSwitch>("/algo_control_switch_srv"); 
  }
  
  void C5GManager::TakeControl()
  {
- 	edo_core_msgs::ControlSwitch srv;
- 	srv.request.mode = 0;
- 	robot_switch_control_client.call(srv);
+  edo_core_msgs::ControlSwitch srv;
+  srv.request.mode = 0;
+  robot_switch_control_client.call(srv);
  }
  
   
 void C5GManager::ReleaseControl()
  {
- 	edo_core_msgs::ControlSwitch srv;
- 	srv.request.mode = 1;
- 	robot_switch_control_client.call(srv);
+  edo_core_msgs::ControlSwitch srv;
+  srv.request.mode = 1;
+  robot_switch_control_client.call(srv);
  }
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	

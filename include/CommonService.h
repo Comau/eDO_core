@@ -36,7 +36,8 @@
 #ifndef EDO_CORE_PKG_INCLUDE_COMMONSERVICE_H_
 #define EDO_CORE_PKG_INCLUDE_COMMONSERVICE_H_
 
-namespace CommonService {
+namespace CommonService
+{
 
 #define SSM_JOINTS_MASK 0x0000007F  // For the time being MAX 7 axes robot
 #define SSM_NUM_MAX_JOINTS       7  // Num max joints/axes
@@ -47,7 +48,7 @@ namespace CommonService {
 //   CommonService();
 //   CommonService(CommonService const&);
 //   CommonService& operator=(CommonService const&);
-// 	static CommonService* instance;
+//  static CommonService* instance;
 // public:
 //   // Singleton getInstance
 //   static CommonService* getInstance();

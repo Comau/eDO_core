@@ -33,13 +33,12 @@
 #include <cstdio>
 #include "C5GManager.h"
 
-
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv,"edo_c5g");
-	C5GManager c5g;
-	c5g.TakeControl();
-	ros::spin();
+  ros::init(argc, argv,"edo_c5g");
+  C5GManager c5g;
+  c5g.TakeControl();
+  ros::spin();
 
-	return 0;
+  return 0;
 }

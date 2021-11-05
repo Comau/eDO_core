@@ -37,26 +37,25 @@
 #define EDO_CORE_PKG_SRC_ERRORSTATE_H_
 
 #include "ros/ros.h"
-
 #include "State.h"
 #include "SubscribePublish.h"
 
-class ErrorState: public State {
+class ErrorState: public State
+{
 public:
 
-	static ErrorState* getInstance();
-	void getCurrentState();
+  static ErrorState* getInstance();
+  void getCurrentState();
 
 private:
 
+  ErrorState();
+  ErrorState(ErrorState const&);
+  ErrorState& operator=(ErrorState const&);
 
-	ErrorState();
-	ErrorState(ErrorState const&);
-	ErrorState& operator=(ErrorState const&);
+  static ErrorState* instance;
 
-	static ErrorState* instance;
-
-	ros::NodeHandle privateNh;
+  ros::NodeHandle privateNh;
 };
 
 #endif /* EDO_CORE_PKG_SRC_ERRORSTATE_H_ */

@@ -36,18 +36,18 @@
 #ifndef EDO_STATE_HPP_
 #define EDO_STATE_HPP_
 
-	enum State {
+  enum State {
 
-	    DEFAULT_ROBOT  = 3,
+      DEFAULT_ROBOT  = 3,
         FINAL_STEP     = 2,
         NEED_DATA      = 1,
         RET_OK         = 0,
-		/**First 100 errors are used by eORL**/
-		MOVETYPE_UNDEF = -101,
-		ORL_UNINITIALIZED = -102,
-		FAILED_MOVE = -103,
-		GENERIC_ERROR = -104
-	};
+    /**First 100 errors are used by eORL**/
+    MOVETYPE_UNDEF = -101,
+    ORL_UNINITIALIZED = -102,
+    FAILED_MOVE = -103,
+    GENERIC_ERROR = -104
+  };
 
 
 

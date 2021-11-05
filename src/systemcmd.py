@@ -46,6 +46,15 @@ class SystemCmdNode():
                     f.write(ff)
                 os.system("chmod 755 /home/edo/configWifi")
                 os.system("/home/edo/configWifi")
+				# reset the password expiration counter to 2 (one more than the first login use)
+                rospy.wait_for_service('increment_calib_counter_srv')
+                try:
+                    increment_fnc = rospy.ServiceProxy('increment_calib_counter_srv', CalibCounter)
+                    increment_fnc(False)
+                    os.system("sudo reboot")
+                except rospy.ServiceException as e:
+                    print("Service call failed: %s"%e)
+                    return SystemCommandSrvResponse('Error during increment calib counter service call')
                 return SystemCommandSrvResponse('')
             else:
                 return SystemCommandSrvResponse('Error')

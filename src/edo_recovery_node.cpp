@@ -50,16 +50,16 @@ Edo_Recovery_Node::Edo_Recovery_Node(ros::NodeHandle& node_obj)
   f_quote_ = NULL;
   n_max_target_samples_ = N_MAX_SAMPLES;
   n_max_quote_samples_ = N_MAX_SAMPLES;
-	ros::param::get("~th", distance_threshold_);
-	ros::Subscriber jnt_comm_subscriber = node_obj.subscribe("/algo_jnt_ctrl", 100, &Edo_Recovery_Node::movementCallback, this);
-	ros::Subscriber jnt_state_subscriber = node_obj.subscribe("/usb_jnt_state", 100, &Edo_Recovery_Node::statusCallback, this);
-	ros::Subscriber moni_subscriber = node_obj.subscribe("/machine_moni", 100, &Edo_Recovery_Node::moniCallback, this);
+  ros::param::get("~th", distance_threshold_);
+  ros::Subscriber jnt_comm_subscriber = node_obj.subscribe("/algo_jnt_ctrl", 100, &Edo_Recovery_Node::movementCallback, this);
+  ros::Subscriber jnt_state_subscriber = node_obj.subscribe("/usb_jnt_state", 100, &Edo_Recovery_Node::statusCallback, this);
+  ros::Subscriber moni_subscriber = node_obj.subscribe("/machine_moni", 100, &Edo_Recovery_Node::moniCallback, this);
 
-	pub_error = node_obj.advertise<std_msgs::String>("/edo_error", 10);
+  pub_error = node_obj.advertise<std_msgs::String>("/edo_error", 10);
 
-	ROS_INFO("Param %f", distance_threshold_);
+  ROS_INFO("Param %f", distance_threshold_);
   
-	ros::spin();  // Endless loop
+  ros::spin();  // Endless loop
 
 }
 
@@ -69,17 +69,17 @@ Edo_Recovery_Node::Edo_Recovery_Node(ros::NodeHandle& node_obj)
  */
 Edo_Recovery_Node::~Edo_Recovery_Node()
 {
-		data_acquisition_in_progess_ = false; // Disable data acquisition
+    data_acquisition_in_progess_ = false; // Disable data acquisition
     targetlist_.clear();
     quotelist_.clear();
     if (f_quote_ != NULL)
     {
-		  fclose(f_quote_);
+      fclose(f_quote_);
       f_quote_ = NULL;
     }
     if (f_target_ != NULL)
     {
-		  fclose(f_target_);
+      fclose(f_target_);
       f_target_ = NULL;
     }
 }
@@ -110,7 +110,7 @@ void Edo_Recovery_Node::movementCallback(edo_core_msgs::JointControlArray msg)
         {
           mItemP->dv[i].position = msg.joints[i].position;
           mItemP->dv[i].velocity = msg.joints[i].velocity;
-		  //mItemP->dv[i].velocity = msg.joints[i].R_rasp;
+      //mItemP->dv[i].velocity = msg.joints[i].R_rasp;
           mItemP->dv[i].current = msg.joints[i].current;
         }  
         targetlist_.push_back(*mItemP);
@@ -147,23 +147,23 @@ void Edo_Recovery_Node::statusCallback(edo_core_msgs::JointStateArray msg)
         {
           mItemP->dv[i].position = msg.joints[i].position;
           mItemP->dv[i].velocity = msg.joints[i].velocity;
-		  //mItemP->dv[i].velocity = msg.joints[i].R_jnt;
+      //mItemP->dv[i].velocity = msg.joints[i].R_jnt;
           mItemP->dv[i].current = msg.joints[i].current;
         }  
         quotelist_.push_back(*mItemP);
       }
       
       for (int j = 0; j < last_ctrl_joint_msg_.joints.size(); j++)
-	    {
-	    	float dist = last_ctrl_joint_msg_.joints[j].position - msg.joints[j].position;
-	    	if (abs(dist) > distance_threshold_) 
-	    	{
-	    		std::stringstream ss;
-	    		ss << "error: on Joint " << j << " distance = " << dist;
-	    		std_msgs::String msg;
-	    		msg.data = ss.str();
-	    		pub_error.publish(msg);
-	    	}
+      {
+        float dist = last_ctrl_joint_msg_.joints[j].position - msg.joints[j].position;
+        if (abs(dist) > distance_threshold_) 
+        {
+          std::stringstream ss;
+          ss << "error: on Joint " << j << " distance = " << dist;
+          std_msgs::String msg;
+          msg.data = ss.str();
+          pub_error.publish(msg);
+        }
       }
     }
   }
@@ -172,52 +172,52 @@ void Edo_Recovery_Node::statusCallback(edo_core_msgs::JointStateArray msg)
 
 void Edo_Recovery_Node::moniCallback(edo_core_msgs::JointMonitoring msg)
 {
-	if (msg.state == 1)
+  if (msg.state == 1)
   {
     // Do not re-activate if already active
     if (data_acquisition_in_progess_ == false)
     {  
-	    //open the data files
-		  char name[BUFSIZ];
-		  time_t p = time(NULL);
-		  struct tm* seconds = localtime(&p);
+      //open the data files
+      char name[BUFSIZ];
+      time_t p = time(NULL);
+      struct tm* seconds = localtime(&p);
       
       name[0] = '\0';
-		  strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
-		  strcat(name,msg.name.c_str());
-		  strcat(name,"_real.txt");
-		  f_quote_=fopen(name,"w");
+      strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
+      strcat(name,msg.name.c_str());
+      strcat(name,"_real.txt");
+      f_quote_=fopen(name,"w");
       
       name[0] = '\0';
-		  strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
-		  strcat(name,msg.name.c_str());
-		  strcat(name,"_target.txt");
-		  f_target_=fopen(name,"w");
+      strftime(name, sizeof(name), "./%F_%H.%M.%S_", seconds);
+      strcat(name,msg.name.c_str());
+      strcat(name,"_target.txt");
+      f_target_=fopen(name,"w");
       
       if ((f_target_ != NULL) && (f_quote_ != NULL))
       {
-		    data_acquisition_in_progess_ = true;  // Enable data acquisition
+        data_acquisition_in_progess_ = true;  // Enable data acquisition
       }
       else
       {
         if (f_quote_ != NULL)
         {
-		      fclose(f_quote_);
+          fclose(f_quote_);
           f_quote_ = NULL;
         }
         if (f_target_ != NULL)
         {
-		      fclose(f_target_);
+          fclose(f_target_);
           f_target_ = NULL;
         }
       }
     }
-	}
-	if (msg.state == 0)
-	{ 
+  }
+  if (msg.state == 0)
+  { 
     // Alway accept to close even if already closed.
     // close the data file and stop data acquisition
-		data_acquisition_in_progess_ = false; // Disable data acquisition
+    data_acquisition_in_progess_ = false; // Disable data acquisition
     
     if ((!targetlist_.empty()) && (f_target_ != NULL))
     {
@@ -248,24 +248,24 @@ void Edo_Recovery_Node::moniCallback(edo_core_msgs::JointMonitoring msg)
     
     if (f_quote_ != NULL)
     {
-		  fclose(f_quote_);
+      fclose(f_quote_);
       f_quote_ = NULL;
     }
     if (f_target_ != NULL)
     {
-		  fclose(f_target_);
+      fclose(f_target_);
       f_target_ = NULL;
     }
     n_max_target_samples_ = N_MAX_SAMPLES;
     n_max_quote_samples_ = N_MAX_SAMPLES;
-	}
+  }
 }
 
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv,"edo_recovery");
-	ros::NodeHandle node_obj;
-	Edo_Recovery_Node recovery(node_obj);
+  ros::init(argc, argv,"edo_recovery");
+  ros::NodeHandle node_obj;
+  Edo_Recovery_Node recovery(node_obj);
 
-	return 0;
+  return 0;
 }
