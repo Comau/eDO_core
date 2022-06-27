@@ -69,6 +69,9 @@ class SystemCmdNode():
         elif req.command == 5:
             os.system("sudo shutdown -h now")
             return SystemCommandSrvResponse('')
+        elif req.command == 6:
+            os.system("sudo reboot")
+            return SystemCommandSrvResponse('')
         return SystemCommandSrvResponse('not implemented')
 
 

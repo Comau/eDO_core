@@ -52,6 +52,11 @@
 
 #include "State.h"
 
+#ifndef CUBE
+  #include "Platform.h"
+#endif
+
+
 class StateManager
 {
 
@@ -65,6 +70,11 @@ public:
   void HandleCalibration(const edo_core_msgs::JointCalibration& jointMask);
   void HandleInit(const edo_core_msgs::JointInit msg);
   void HandleJog(const edo_core_msgs::MovementCommand& msg);
+#ifdef CUBE
+  #if CUBE
+  void HandleObjects(const std_msgs::Int8 msg);
+  #endif
+#endif
   void HandleMove(const edo_core_msgs::MovementCommand& msg);
   void HandleMoveAck(const edo_core_msgs::MovementFeedback& ack);
   void HandleEdoError(const std_msgs::String errorStr);

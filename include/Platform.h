@@ -27,18 +27,16 @@
   either expressed or implied, of the FreeBSD Project.
 */
 /*
- * SoftwareVersion.h
+ * Platform.h
  *
- *  Created on: Nov 6, 2017
+ *  Created on: dec 06, 2021
  *      Author: comau
  */
 
-#ifndef SOFTWARE_VERSION_H_
-#define SOFTWARE_VERSION_H_
+#ifndef EDO_CORE_PLATFORM_H_
+#define EDO_CORE_PLATFORM_H_
 
-#define EDO_SW_MAJOR thisWillBeChangedBy build_edo
-#define EDO_SW_MINOR thisWillBeChangedBy build_edo
-#define EDO_SW_REVISION thisWillBeChangedBy build_edo
-#define EDO_SW_VERSIONING thisWillBeChangedBy build_edo
+#define EDO 1
+#define CUBE 0
 
-#endif /* SOFTWARE_VERSION_H_ */
+#endif /* EDO_CORE_PLATFORM_H_ */

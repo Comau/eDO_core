@@ -36,6 +36,9 @@
 #include "AlgorithmManager.hpp"
 #include "CommonService.h"
 using namespace CommonService;
+#ifndef CUBE
+  #include "Platform.h"
+#endif
 
 #define DEVELOPMENT_RELEASE (1==0)
 
@@ -146,6 +149,14 @@ algorithm_mode_(UNINITIALIZED)
   moveHandle_old = 0;
   status_old = 0;
   
+  /* TSK6297 - remove collision if CUBE */
+  #if CUBE
+   _DEFAULT_collision_disable = true;
+  #else
+   _DEFAULT_collision_disable = false;
+  #endif
+  
+  _collision_disable = _DEFAULT_collision_disable;
   _vb_BcFlag = false;
   CollisionFactor = 1;
   curr_limit[0] = 0.5;
@@ -166,7 +177,6 @@ algorithm_mode_(UNINITIALIZED)
   // Duration, callback, callback-owner, oneshot, autostart
   timerCalib_ = private_nh.createTimer(ros::Duration(0.5), &AlgorithmManager::timerCallback, this, true, false);
   collTimer   = private_nh.createTimer(ros::Duration(11), &AlgorithmManager::unbrakeTimerCallback, this, true, false);
-  _collision_disable = false;
   
   ros::Rate loop_rate(controller_frequency_);
 #if ENABLE_MINIMAL_ALGOMNGR_PRINTFS
@@ -710,16 +720,13 @@ void AlgorithmManager::stateCallback(edo_core_msgs::JointStateArrayConstPtr msg)
     {
       if(collisionCheck( msg->joints[i].current, joints_control_.joints[i].current, i, curr_limit))
       {
-        if(!_collision_disable)
+        JointsInColl = true;
+        if(!_vb_BcFlag)
         {
-          JointsInColl = true;
-          if(!_vb_BcFlag)
-          {
-            JointsInAllarm = true;
-          }
-          sm_JointsInBrakeState |= (1 << i);
-          raspberry_coll_mask |= (1<<i);
+          JointsInAllarm = true;
         }
+        sm_JointsInBrakeState |= (1 << i);
+        raspberry_coll_mask |= (1<<i);
       }
     }
 
@@ -3260,7 +3267,7 @@ bool AlgorithmManager::SwitchControl(edo_core_msgs::ControlSwitch::Request &req,
   else if(req.mode == 0 && algorithm_mode_ >= SWITCHED_OFF)
   {// Client requests to release the control
     res.result = 0;
-    _collision_disable = false;
+    _collision_disable = _DEFAULT_collision_disable;
     setAlgorithmMode(INITIALIZED, __FUNCTION__,__LINE__); // Ready to initialize ORL
     switchControlHandler();
     edo_core_msgs::JointInit init_msg;
@@ -3278,7 +3285,9 @@ bool AlgorithmManager::SwitchControl(edo_core_msgs::ControlSwitch::Request &req,
 
 bool AlgorithmManager::collisionCheck(float vr_CurMis, float vr_CurDyn, int i, float curr_limit[7])
 {
-  
+  /* early exit */
+  if (_collision_disable==true)
+    return false;
   /* -------------------------------- DECLARATION --------------------------- */
   float vr_TsMis;
   float vr_FiltCurDyn_Freq;
@@ -3576,7 +3585,7 @@ void AlgorithmManager::jntResetCallback(edo_core_msgs::JointResetConstPtr msg)
 void AlgorithmManager::unbrakeTimerCallback(const ros::TimerEvent& event)
 {
   collTimer.stop();
-  _collision_disable = false;
+  _collision_disable = _DEFAULT_collision_disable;
 }
 
 void AlgorithmManager::toolConfigCallback(std_msgs::Int8 msg)

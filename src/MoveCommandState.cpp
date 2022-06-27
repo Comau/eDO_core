@@ -216,7 +216,9 @@ State* MoveCommandState::HandleMoveAck(const edo_core_msgs::MovementFeedback& ac
   ROS_INFO("[HandleMoveAck] ack.type == COMMAND_RECEIVED");
 #endif
     // non faccio nulla
+#if ENABLE_MINIMAL_MCS_PRINTFS    
     printAck(ack,"MoveCommandState::HandleMoveAck non faccio nulla",__LINE__);
+#endif
   }
   else
   {

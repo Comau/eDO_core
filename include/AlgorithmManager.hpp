@@ -332,6 +332,7 @@ private:
   ros::Timer collTimer;
   void jntResetCallback(edo_core_msgs::JointResetConstPtr msg);
   void unbrakeTimerCallback(const ros::TimerEvent& event);
+  bool _DEFAULT_collision_disable;
   bool _collision_disable;
   bool collisionCheck(float vr_CurMis, float vr_CurDyn, int vi_JointIndex, float curr_limit[7]);
   

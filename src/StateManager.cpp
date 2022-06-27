@@ -46,6 +46,9 @@
 #include "CalibrateState.h"
 #include "MoveCommandState.h"
 #include "BrakesCheckState.h"
+#ifndef CUBE
+  #include "Platform.h"
+#endif
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -77,6 +80,11 @@
 StateManager::StateManager()
 {
   machineOpcode = 0;
+#if CUBE
+  object_state = 0;
+  object_pos = 0.0;
+  object_vel = 0.0;
+#endif
   current = InitState::getInstance();
   ROS_INFO("Start State Manager");
   current->getCurrentState();
@@ -110,7 +118,12 @@ StateManager::~StateManager()
 {
   ROS_INFO("Stop State Manager");
 }
-
+#if CUBE
+  void StateManager::HandleObjects(const std_msgs::Int8 msg)
+  { 
+	  object_state = msg.data;
+  }
+#endif
 void StateManager::HandleJntState(const edo_core_msgs::JointStateArray& state) 
 {
   SubscribePublish *SPinstance = SubscribePublish::getInstance();
@@ -163,9 +176,49 @@ void StateManager::HandleJntState(const edo_core_msgs::JointStateArray& state)
     }
     else
     {
-      // Initialization message for Tablet and Matlab
+#if CUBE
+	  // for edo cube if 3D app detect an object simulate the fact that the object has been taken by the gripper
+	  if(object_state > 0 && i == 6) 
+      {
+		if(object_state >= state.joints[i].position)
+        {
+		  // just skip gripper update? or something more ?  
+		  app_state.joints[i].position = (float)object_state;
+          app_state.joints[i].velocity = 5.0;
+		}
+		else
+	    {
+		  // Initialization message for Tablet and Matlab
+		  if(state.joints[i].position > 0)
+		    app_state.joints[i].position = state.joints[i].position;
+		  else
+		    app_state.joints[i].position = 0;
+			
+          app_state.joints[i].velocity = state.joints[i].velocity;
+		}
+	  }
+      else
+      {
+        if(i == 6) // save gripper pos
+		{
+			object_pos = state.joints[i].position;
+		    object_vel = state.joints[i].velocity;
+			
+		
+	    	if(state.joints[i].position > 0)
+		      app_state.joints[i].position = state.joints[i].position;
+		    else
+		      app_state.joints[i].position = 0;
+		}
+		
+		app_state.joints[i].position = state.joints[i].position;
+        app_state.joints[i].velocity = state.joints[i].velocity;
+      }
+#else     
+	  // Initialization message for Tablet and Matlab
       app_state.joints[i].position = state.joints[i].position;
       app_state.joints[i].velocity = state.joints[i].velocity;
+#endif
       joints[i].noReplyCounter = 0;
     }
     
@@ -854,14 +907,18 @@ bool StateManager::getSwVersion(edo_core_msgs::SoftwareVersion::Request &req, ed
   tool_id = SPinstance->GetToolConfiguration();
   res.tool_id = tool_id;
 
-  swVersion = "edo_";
+  if (CUBE == 1)
+      swVersion = "cube_";
+  else 
+      swVersion = "edo_";
+  
   swVersion += std::to_string(EDO_SW_MAJOR);
   swVersion += ".";
   swVersion += std::to_string(EDO_SW_MINOR);
   swVersion += ".";
   swVersion += std::to_string(EDO_SW_REVISION);
-  swVersion += ".";
-  swVersion += std::to_string(EDO_SW_SVN);
+/*  swVersion += ".";
+  swVersion += std::to_string(EDO_SW_SVN);*/
   
   #if ENABLE_ROS_INFO
   printf("Software Version: %s\n",swVersion.c_str());

@@ -33,12 +33,16 @@
  *      Author: comau
  */
 #include "CalibCounter.hpp"
+
+#define ENABLE_ROS_INFO  (1==0)
   
 CalibCounter::CalibCounter(ros::NodeHandle& node)
 {
-    ROS_INFO("created calib counter service");
-    calibration_counter_service = node.advertiseService("calibration_counter_srv", &CalibCounter::getCalibrationCounter, this);
-    increment_calib_counter_service = node.advertiseService("increment_calib_counter_srv", &CalibCounter::incrementCalibrationCounter, this);
+#if ENABLE_ROS_INFO
+  ROS_INFO("created calib counter service");
+#endif
+  calibration_counter_service = node.advertiseService("calibration_counter_srv", &CalibCounter::getCalibrationCounter, this);
+  increment_calib_counter_service = node.advertiseService("increment_calib_counter_srv", &CalibCounter::incrementCalibrationCounter, this);
 }
 
 /**

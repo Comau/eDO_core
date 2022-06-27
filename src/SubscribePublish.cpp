@@ -34,6 +34,9 @@
  */
 
 #include "SubscribePublish.h"
+#ifndef CUBE
+  #include "Platform.h"
+#endif
 
 SubscribePublish* SubscribePublish::instance = NULL;
 
@@ -55,7 +58,9 @@ SubscribePublish::SubscribePublish()
   bridge_move_subscriber        = node_obj.subscribe("/bridge_move",10, &StateManager::HandleMove, &manager);
   bridge_jog_subscriber         = node_obj.subscribe("/bridge_jog",10, &StateManager::HandleJog, &manager);
   bridge_init_subscriber        = node_obj.subscribe("/bridge_init",10, &StateManager::HandleInit, &manager);
-  
+#if CUBE
+  objects_state_subscriber      = node_obj.subscribe("/objects_state",10, &StateManager::HandleObjects, &manager);
+#endif
   machine_move_ack_publisher    = node_obj.advertise<edo_core_msgs::MovementFeedback>("/machine_movement_ack",10);
   machine_state_publisher       = node_obj.advertise<edo_core_msgs::MachineState>("/machine_state",10);
   bridge_sw_version_server      = node_obj.advertiseService("machine_bridge_sw_version_srv", &StateManager::getSwVersion, &manager);
