@@ -718,15 +718,23 @@ void AlgorithmManager::stateCallback(edo_core_msgs::JointStateArrayConstPtr msg)
     
     if(JointsCurrentCalibration && algorithm_mode_ != UNINITIALIZED && i<6) // se minore di 6, pinza non ha collision detection
     {
+	  /* collisionCheck function must run at every loop cycle because it has a filter inside. 
+	     It is automatically disabled if _DEFAULT_collision_disable is set at true,
+		 otherwise can exist cycles in which is disabled (eg. after a collision happened) 
+		 but still has to be run in order to keep filter values updated, that is why the condition "if(!_collision_disable)"
+		 is evaluated after the call to the function itself. */
       if(collisionCheck( msg->joints[i].current, joints_control_.joints[i].current, i, curr_limit))
       {
-        JointsInColl = true;
-        if(!_vb_BcFlag)
-        {
-          JointsInAllarm = true;
-        }
-        sm_JointsInBrakeState |= (1 << i);
-        raspberry_coll_mask |= (1<<i);
+        if(!_collision_disable)
+		{
+		  JointsInColl = true;
+		  if(!_vb_BcFlag)
+		  {
+		    JointsInAllarm = true;
+		  }
+		  sm_JointsInBrakeState |= (1 << i);
+		  raspberry_coll_mask |= (1<<i);
+		}
       }
     }
 
@@ -3285,9 +3293,10 @@ bool AlgorithmManager::SwitchControl(edo_core_msgs::ControlSwitch::Request &req,
 
 bool AlgorithmManager::collisionCheck(float vr_CurMis, float vr_CurDyn, int i, float curr_limit[7])
 {
-  /* early exit */
-  if (_collision_disable==true)
+  /* early exit only in case of CUBE otherwise the function must be called at every cycle to update filter values */
+  if (_DEFAULT_collision_disable)
     return false;
+  
   /* -------------------------------- DECLARATION --------------------------- */
   float vr_TsMis;
   float vr_FiltCurDyn_Freq;
